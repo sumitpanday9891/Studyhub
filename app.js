@@ -1,51 +1,828 @@
-import {auth,db} from "./firebase.js";
-import {onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,updateProfile,sendPasswordResetEmail,signOut} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
-import {collection,doc,getDoc,getDocs,setDoc,addDoc,updateDoc,deleteDoc,serverTimestamp} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+// ============================================
+// STUDYHUB - FULL APP.JS
+// Firebase Authentication + Firestore
+// ============================================
 
-const ADMIN="sumitpandey9891@gmail.com", $=id=>document.getElementById(id);
-const s={user:null,profile:null,classes:[],batches:[],resources:[],quizzes:[],enrollments:[],attempts:[],signup:false};
-const col=n=>collection(db,n), esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function msg(t){$("toast").textContent=t;$("toast").classList.add("show");clearTimeout(msg.timer);msg.timer=setTimeout(()=>$("toast").classList.remove("show"),3600)}
-function err(e){let c=e?.code;return ({"auth/invalid-credential":"Incorrect email or password.","auth/email-already-in-use":"Email already registered; sign in instead.","auth/weak-password":"Password must be at least 6 characters.","auth/operation-not-allowed":"Enable Email/Password in Firebase Authentication.","auth/network-request-failed":"Check your internet connection.","permission-denied":"Firestore permission denied. Publish the provided firestore.rules.","auth/too-many-requests":"Too many attempts. Wait and retry."})[c]||e.message||"Something went wrong."}
-function admin(){return !!s.user&&s.user.email?.toLowerCase()===ADMIN.toLowerCase()&&s.profile?.role==="admin"}
-function className(id){return s.classes.find(x=>x.id===id)?.name||"Class"}
-function batchName(id){return s.batches.find(x=>x.id===id)?.name||"Batch"}
-function mine(){return s.enrollments.filter(x=>x.studentId===s.user?.uid)}
-function enrolled(id){return mine().some(x=>x.batchId===id)}
-function date(x){try{return x?.toDate?x.toDate().toLocaleDateString():"—"}catch{return "—"}}
-function busy(b,on,label){b.disabled=on;b.textContent=on?"Please wait…":label}
-$("year").textContent=new Date().getFullYear();
-$("toggle").onclick=()=>{s.signup=!s.signup;$("nameLabel").classList.toggle("hide",!s.signup);$("name").required=s.signup;$("authTitle").textContent=s.signup?"Create student account":"Sign in to continue";$("authButton").textContent=s.signup?"Create account →":"Sign in →";$("toggle").textContent=s.signup?"Already registered? Sign in":"New student? Create an account"};
-$("reset").onclick=async()=>{if(!$("email").value.trim())return msg("Enter your email first.");try{await sendPasswordResetEmail(auth,$("email").value.trim());msg("Password reset email sent.")}catch(e){msg(err(e))}};
-$("authForm").onsubmit=async e=>{e.preventDefault();let b=$("authButton");busy(b,true);try{let email=$("email").value.trim().toLowerCase(),pass=$("password").value,cred;if(s.signup){cred=await createUserWithEmailAndPassword(auth,email,pass);let name=$("name").value.trim();await updateProfile(cred.user,{displayName:name});await setDoc(doc(db,"users",cred.user.uid),{uid:cred.user.uid,email,name,role:email===ADMIN?"admin":"student",classId:"",createdAt:serverTimestamp()})}else cred=await signInWithEmailAndPassword(auth,email,pass);msg("Login successful.")}catch(e){msg(err(e))}finally{busy(b,false,s.signup?"Create account →":"Sign in →")}};
-$("logout").onclick=()=>signOut(auth);
-onAuthStateChanged(auth,async user=>{if(!user){s.user=null;$("auth").classList.remove("hide");$("app").classList.add("hide");$("logout").classList.add("hide");return} s.user=user;$("auth").classList.add("hide");$("app").classList.remove("hide");$("logout").classList.remove("hide");try{let ref=doc(db,"users",user.uid),snap=await getDoc(ref);if(snap.exists())s.profile=snap.data();else{s.profile={uid:user.uid,email:user.email,name:user.displayName||user.email.split("@")[0],role:user.email.toLowerCase()===ADMIN?"admin":"student",classId:""};await setDoc(ref,{...s.profile,createdAt:serverTimestamp()})}if(user.email.toLowerCase()===ADMIN&&s.profile.role!=="admin"){await setDoc(ref,{role:"admin"},{merge:true});s.profile.role="admin"}await load()}catch(e){msg(err(e))}});
-async function read(n){let x=await getDocs(col(n));return x.docs.map(d=>({id:d.id,...d.data()}))}
-async function load(){[s.classes,s.batches,s.resources,s.quizzes,s.enrollments,s.attempts]=await Promise.all(["classes","batches","resources","quizzes","enrollments","attempts"].map(read));options();shell();renderBatches();renderAdmin();renderProgress()}
-function opts(id,arr,placeholder,selected=""){let el=$(id);if(!el)return;let old=selected||el.value;el.innerHTML=`<option value="">${esc(placeholder)}</option>`+arr.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");if(arr.some(x=>x.id===old))el.value=old}
-function options(){opts("classFilter",s.classes,"All classes");opts("profileClass",s.classes,"Choose class",s.profile?.classId);opts("batchClass",s.classes,"Choose class");opts("resourceClass",s.classes,"Choose class");opts("quizClass",s.classes,"Choose class");batchOpts("resourceClass","resourceBatch");batchOpts("quizClass","quizBatch")}
-function batchOpts(c,b){let id=$(c)?.value;opts(b,s.batches.filter(x=>!id||x.classId===id),"Choose batch")}
-$("resourceClass").onchange=()=>batchOpts("resourceClass","resourceBatch");$("quizClass").onchange=()=>batchOpts("quizClass","quizBatch");
-function shell(){let a=admin(),name=s.profile?.name||s.user.displayName||"Student";$("greeting").textContent="Welcome, "+name;$("roleText").textContent=a?"Manage your learning platform.":"Keep learning and build your progress.";$("role").textContent=a?"ADMIN":"STUDENT";$("adminNav").classList.toggle("hide",!a);$("profileName").value=name;$("profileEmail").textContent=s.user.email;$("statBatches").textContent=a?s.batches.length:mine().length;$("statResources").textContent=a?s.resources.length+s.quizzes.length:s.resources.filter(x=>enrolled(x.batchId)).length+s.quizzes.filter(x=>enrolled(x.batchId)).length;let q=s.attempts.filter(x=>x.studentId===s.user.uid&&x.kind==="quiz");$("statAttempts").textContent=q.length;$("statScore").textContent=q.length?Math.round(q.reduce((n,x)=>n+x.percent,0)/q.length)+"%":"—";renderHome()}
-document.querySelectorAll("nav button[data-view]").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".view").forEach(x=>x.classList.add("hide"));$(b.dataset.view).classList.remove("hide");if(b.dataset.view==="progress")renderProgress();if(b.dataset.view==="batches")renderBatches();if(b.dataset.view==="admin")renderAdmin()});
-function card(title,subtitle,body,actions=""){return `<article><small>${esc(subtitle)}</small><h3>${esc(title)}</h3><p>${esc(body)}</p>${actions}</article>`}
-function renderHome(){let a=admin(),items=a?s.batches:s.batches.filter(b=>enrolled(b.id));$("homeCards").innerHTML=items.length?items.slice(0,9).map(b=>card(b.name,className(b.classId),`${b.teacher||"Teacher not set"} · ${s.resources.filter(r=>r.batchId===b.id).length+s.quizzes.filter(q=>q.batchId===b.id).length} resources`,`<button data-open="${b.id}">Open classroom →</button>`)).join(""):card(a?"No batches yet":"No enrolled batches",a?"Add a class and batch in Manage.":"Explore batches and enroll to begin.","Your classroom appears here.");$("homeCards").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openBatch(b.dataset.open))}
-function renderBatches(){if(!$("batchCards"))return;let cid=$("classFilter").value,search=$("search").value.toLowerCase();let arr=s.batches.filter(b=>(!cid||b.classId===cid)&&(`${b.name} ${b.teacher||""}`.toLowerCase().includes(search)));$("batchCards").innerHTML=arr.length?arr.map(b=>card(b.name,className(b.classId),`Teacher: ${b.teacher||"Not specified"}`,enrolled(b.id)?`<button data-open="${b.id}">Open classroom</button>`:`<button data-enroll="${b.id}">Enroll in batch</button>`+(admin()?`<button data-delbatch="${b.id}">Delete</button>`:""))).join(""):"<article>No batches found yet.</article>";$("batchCards").querySelectorAll("[data-enroll]").forEach(b=>b.onclick=()=>enroll(b.dataset.enroll));$("batchCards").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openBatch(b.dataset.open));$("batchCards").querySelectorAll("[data-delbatch]").forEach(b=>b.onclick=()=>delBatch(b.dataset.delbatch))}
-$("classFilter").onchange=renderBatches;$("search").oninput=renderBatches;
-async function enroll(id){if(admin())return msg("Admin does not need to enroll.");try{await addDoc(col("enrollments"),{studentId:s.user.uid,batchId:id,classId:s.batches.find(x=>x.id===id).classId,createdAt:serverTimestamp()});await load();msg("Enrolled successfully.")}catch(e){msg(err(e))}}
-function video(url){try{let u=new URL(url),id=u.hostname.includes("youtu.be")?u.pathname.slice(1):u.searchParams.get("v");if(u.hostname.includes("youtube.com")&&u.pathname.startsWith("/embed/"))id=u.pathname.split("/")[2];return id?`<iframe class="video" src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}" allowfullscreen title="Lecture video"></iframe>`:""}catch{return ""}}
-function openBatch(id){let b=s.batches.find(x=>x.id===id);if(!b)return;if(!admin()&&!enrolled(id))return msg("Enroll in this batch first.");let r=s.resources.filter(x=>x.batchId===id),q=s.quizzes.filter(x=>x.batchId===id);$("homeCards").innerHTML=`<article style="grid-column:1/-1"><button id="back">← Back</button><h2>${esc(b.name)}</h2><p>${esc(className(b.classId))} · ${esc(b.teacher||"")}</p></article>`+r.map(x=>`<article><small>${esc(x.type)}</small><h3>${esc(x.chapter)} · ${esc(x.title)}</h3><p>${esc(x.description||"")}</p><a href="${esc(x.url)}" target="_blank" rel="noopener">Open resource ↗</a>${x.type==="lecture"?video(x.url):""}<p><button data-done="${x.id}">Mark completed</button></p></article>`).join("")+q.map(x=>card(x.title,"QUIZ",`${x.chapter} · ${x.questions.length} questions`,`<button data-quiz="${x.id}">Take quiz</button>`)).join("")+(!r.length&&!q.length?"<article>No learning material added yet.</article>":"");$("back").onclick=renderHome;$("homeCards").querySelectorAll("[data-done]").forEach(x=>x.onclick=()=>complete(x.dataset.done,id));$("homeCards").querySelectorAll("[data-quiz]").forEach(x=>x.onclick=()=>takeQuiz(x.dataset.quiz))}
-async function complete(rid,bid){try{if(s.attempts.some(x=>x.kind==="resource"&&x.resourceId===rid&&x.studentId===s.user.uid))return msg("Already marked completed.");await addDoc(col("attempts"),{studentId:s.user.uid,batchId:bid,kind:"resource",resourceId:rid,percent:100,createdAt:serverTimestamp()});await load();msg("Progress updated.")}catch(e){msg(err(e))}}
-function takeQuiz(id){let q=s.quizzes.find(x=>x.id===id);if(!q)return;let qs=q.questions||[];$("homeCards").innerHTML=`<article style="grid-column:1/-1"><button id="quizBack">← Back</button><h2>${esc(q.title)}</h2><form id="take">${qs.map((x,i)=>`<div class="question"><h4>${i+1}. ${esc(x.text)}</h4>${x.options.map((o,j)=>`<label class="option"><input type="radio" name="q${i}" value="${j}" required>${esc(o)}</label>`).join("")}</div>`).join("")}<button class="primary">Submit quiz</button></form></article>`;$("quizBack").onclick=()=>openBatch(q.batchId);$("take").onsubmit=async e=>{e.preventDefault();let data=new FormData(e.currentTarget),correct=0,answers=qs.map((x,i)=>{let a=Number(data.get("q"+i));if(a===Number(x.correctIndex))correct++;return a}),percent=Math.round(correct/qs.length*100);try{await addDoc(col("attempts"),{studentId:s.user.uid,batchId:q.batchId,kind:"quiz",quizId:id,quizTitle:q.title,score:correct,total:qs.length,percent,answers,createdAt:serverTimestamp()});await load();$("homeCards").innerHTML=`<article style="grid-column:1/-1"><div class="result"><small>YOUR RESULT</small><b>${percent}%</b>${correct} / ${qs.length} correct</div><button id="backResult">Back to classroom</button></article>`;$("backResult").onclick=()=>openBatch(q.batchId)}catch(er){msg(err(er))}}}
-$("profileForm").onsubmit=async e=>{e.preventDefault();try{let name=$("profileName").value.trim(),classId=$("profileClass").value;await updateProfile(s.user,{displayName:name});await setDoc(doc(db,"users",s.user.uid),{uid:s.user.uid,email:s.user.email,name,classId,role:admin()?"admin":"student"},{merge:true});s.profile={...s.profile,name,classId};shell();msg("Profile saved.")}catch(e){msg(err(e))}};
-$("classForm").onsubmit=async e=>{e.preventDefault();try{await addDoc(col("classes"),{name:$("className").value.trim(),createdAt:serverTimestamp()});e.target.reset();await load();msg("Class added.")}catch(e){msg(err(e))}};
-$("batchForm").onsubmit=async e=>{e.preventDefault();try{await addDoc(col("batches"),{classId:$("batchClass").value,name:$("batchName").value.trim(),teacher:$("teacher").value.trim(),createdAt:serverTimestamp()});e.target.reset();await load();msg("Batch added.")}catch(e){msg(err(e))}};
-$("resourceForm").onsubmit=async e=>{e.preventDefault();try{let classId=$("resourceClass").value,batchId=$("resourceBatch").value;if(s.batches.find(x=>x.id===batchId)?.classId!==classId)throw Error("Select a batch belonging to this class.");let url=$("url").value.trim();if(!/^https?:\\/\\//i.test(url))throw Error("Enter a valid HTTPS/HTTP URL.");await addDoc(col("resources"),{classId,batchId,chapter:$("chapter").value.trim(),type:$("type").value,title:$("resourceTitle").value.trim(),url,description:$("description").value.trim(),createdAt:serverTimestamp()});e.target.reset();await load();msg("Resource added.")}catch(e){msg(err(e))}};
-let qnum=0;function addQ(){let n=qnum++,d=document.createElement("div");d.className="question";d.innerHTML=`<button type="button" class="remove">Remove question</button><h4>Question</h4><label>Question text<textarea class="qt" required></textarea></label><div class="twocol">${[0,1,2,3].map(i=>`<label>Option ${"ABCD"[i]}<input class="qo" required></label>`).join("")}</div><label>Correct answer<select class="qc"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select></label>`;d.querySelector(".remove").onclick=()=>d.remove();$("questions").append(d)}$("addQuestion").onclick=addQ;addQ();
-$("quizForm").onsubmit=async e=>{e.preventDefault();try{let classId=$("quizClass").value,batchId=$("quizBatch").value,cards=[...document.querySelectorAll("#questions .question")];if(s.batches.find(x=>x.id===batchId)?.classId!==classId)throw Error("Select a batch belonging to this class.");if(!cards.length)throw Error("Add at least one question.");let questions=cards.map(d=>({text:d.querySelector(".qt").value.trim(),options:[...d.querySelectorAll(".qo")].map(x=>x.value.trim()),correctIndex:Number(d.querySelector(".qc").value)}));await addDoc(col("quizzes"),{classId,batchId,chapter:$("quizChapter").value.trim(),title:$("quizTitle").value.trim(),questions,createdAt:serverTimestamp()});e.target.reset();$("questions").innerHTML="";qnum=0;addQ();await load();msg("Quiz published.")}catch(e){msg(err(e))}};
-async function del(name,id){if(!admin()||!confirm("Delete this item?"))return;try{await deleteDoc(doc(db,name,id));await load();msg("Deleted.")}catch(e){msg(err(e))}}
-async function delBatch(id){if(!confirm("Delete this batch and its linked resources/quizzes/enrollments?"))return;try{for(let [n,a] of [["resources",s.resources],["quizzes",s.quizzes],["enrollments",s.enrollments]])for(let x of a.filter(y=>y.batchId===id))await deleteDoc(doc(db,n,x.id));await deleteDoc(doc(db,"batches",id));await load();msg("Batch and linked content deleted.")}catch(e){msg(err(e))}}
-function renderAdmin(){if(!admin())return;$("structureList").innerHTML=s.classes.map(c=>`<div class="item"><div><h4>${esc(c.name)}</h4><p>${s.batches.filter(b=>b.classId===c.id).length} batches</p></div><button data-delclass="${c.id}">Delete class</button></div>`).join("")+s.batches.map(b=>`<div class="item"><div><h4>${esc(b.name)}</h4><p>${esc(className(b.classId))} · ${esc(b.teacher||"No teacher")}</p></div><button data-delbatch="${b.id}">Delete batch</button></div>`).join("");$("structureList").querySelectorAll("[data-delclass]").forEach(b=>b.onclick=()=>s.batches.some(x=>x.classId===b.dataset.delclass)?msg("Delete this class's batches first."):del("classes",b.dataset.delclass));$("structureList").querySelectorAll("[data-delbatch]").forEach(b=>b.onclick=()=>delBatch(b.dataset.delbatch));$("resourceList").innerHTML=s.resources.map(r=>`<div class="item"><div><h4>${esc(r.title)} · ${esc(r.type)}</h4><p>${esc(className(r.classId))} / ${esc(batchName(r.batchId))} / ${esc(r.chapter)}</p><a target="_blank" rel="noopener" href="${esc(r.url)}">Open URL</a></div><button data-dr="${r.id}">Delete</button></div>`).join("");$("resourceList").querySelectorAll("[data-dr]").forEach(b=>b.onclick=()=>del("resources",b.dataset.dr));$("quizList").innerHTML=s.quizzes.map(q=>`<div class="item"><div><h4>${esc(q.title)}</h4><p>${esc(className(q.classId))} / ${esc(batchName(q.batchId))} / ${q.questions.length} questions</p></div><button data-dq="${q.id}">Delete</button></div>`).join("");$("quizList").querySelectorAll("[data-dq]").forEach(b=>b.onclick=()=>del("quizzes",b.dataset.dq));renderReports()}
-document.querySelectorAll("[data-admin]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".adminview").forEach(x=>x.classList.add("hide"));$(b.dataset.admin).classList.remove("hide")});
-function renderProgress(){if(!$("progressContent")||!s.user)return;let a=s.attempts.filter(x=>x.studentId===s.user.uid),q=a.filter(x=>x.kind==="quiz"),avg=q.length?Math.round(q.reduce((n,x)=>n+x.percent,0)/q.length):0;$("progressContent").innerHTML=`<div class="stats"><article><small>Completed resources</small><b>${a.filter(x=>x.kind==="resource").length}</b></article><article><small>Quiz attempts</small><b>${q.length}</b></article><article><small>Average score</small><b>${q.length?avg+"%":"—"}</b></article><article><small>Enrolled batches</small><b>${mine().length}</b></article></div><div class="tablewrap"><table><tr><th>Activity</th><th>Batch</th><th>Result</th><th>Date</th></tr>${a.map(x=>`<tr><td>${esc(x.quizTitle||"Resource completed")}</td><td>${esc(batchName(x.batchId))}</td><td>${x.kind==="quiz"?x.score+"/"+x.total+" ("+x.percent+"%)":"Completed"}</td><td>${date(x.createdAt)}</td></tr>`).join("")}</table></div>`}
-function renderReports(){let ids=[...new Set(s.attempts.map(x=>x.studentId))],rows=ids.map(uid=>{let a=s.attempts.filter(x=>x.studentId===uid),q=a.filter(x=>x.kind==="quiz");return{uid,count:q.length,avg:q.length?Math.round(q.reduce((n,x)=>n+x.percent,0)/q.length):0}}).sort((a,b)=>b.avg-a.avg);$("reportContent").innerHTML=`<h3>Student rankings</h3><div class="tablewrap"><table><tr><th>Rank</th><th>Student UID</th><th>Quiz attempts</th><th>Average</th></tr>${rows.map((r,i)=>`<tr><td>#${i+1}</td><td>${esc(r.uid.slice(0,14))}…</td><td>${r.count}</td><td>${r.count?r.avg+"%":"—"}</td></tr>`).join("")}</table></div>`}
+import { auth, db } from "./firebase.js";
+
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail,
+  updateProfile
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+// ============================================
+// CONFIGURATION
+// ============================================
+
+const ADMIN = "sumitpandey9891@gmail.com";
+
+const s = {
+  user: null,
+  profile: null,
+  classes: [],
+  batches: [],
+  resources: [],
+  quizzes: [],
+  enrollments: [],
+  attempts: [],
+  signup: false
+};
+
+// ============================================
+// HELPERS
+// ============================================
+
+const $ = id => document.getElementById(id);
+
+function msg(text) {
+  const el = $("toast");
+
+  if (el) {
+    el.textContent = text;
+    el.classList.remove("hide");
+
+    clearTimeout(el._timer);
+
+    el._timer = setTimeout(() => {
+      el.classList.add("hide");
+    }, 5000);
+  } else {
+    alert(text);
+  }
+}
+
+function err(e) {
+  console.error("StudyHub error:", e);
+
+  const messages = {
+    "auth/invalid-credential": "Email ya password galat hai.",
+    "auth/user-not-found": "Yeh account nahi mila.",
+    "auth/wrong-password": "Password galat hai.",
+    "auth/email-already-in-use": "Yeh email pehle se registered hai.",
+    "auth/weak-password": "Password kam se kam 6 characters ka rakhein.",
+    "auth/invalid-email": "Email address sahi nahi hai.",
+    "auth/too-many-requests": "Bahut attempts hue. Kuch der baad try karein.",
+    "permission-denied": "Firestore permission error. Rules check karein.",
+    "unavailable": "Internet ya Firebase connection check karein."
+  };
+
+  return messages[e?.code] ||
+    e?.message ||
+    "Kuch galat hua. Dobara try karein.";
+}
+
+function esc(value = "") {
+  return String(value).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[ch]);
+}
+
+function admin() {
+  return s.user?.email?.toLowerCase() === ADMIN &&
+    s.profile?.role === "admin";
+}
+
+function col(name) {
+  return collection(db, name);
+}
+
+function busy(button, state, label = "") {
+  if (!button) return;
+
+  button.disabled = state;
+
+  if (!state && label) {
+    button.textContent = label;
+  } else if (state) {
+    button.textContent = "Please wait...";
+  }
+}
+
+function className(id) {
+  return s.classes.find(x => x.id === id)?.name || "No class";
+}
+
+function batchName(id) {
+  return s.batches.find(x => x.id === id)?.name || "No batch";
+}
+
+function mine() {
+  return s.enrollments.filter(
+    x => x.studentId === s.user?.uid
+  );
+}
+
+function enrolled(batchId) {
+  return mine().some(x => x.batchId === batchId);
+}
+
+function date(value) {
+  try {
+    if (!value) return "—";
+
+    const d = value.toDate
+      ? value.toDate()
+      : new Date(value);
+
+    return d.toLocaleDateString("en-IN");
+  } catch {
+    return "—";
+  }
+}
+
+// ============================================
+// AUTH FORM
+// ============================================
+
+if ($("authForm")) {
+  $("authForm").addEventListener("submit", async e => {
+    e.preventDefault();
+
+    const button = $("authButton");
+
+    busy(button, true);
+
+    try {
+      const email = $("email").value.trim().toLowerCase();
+      const password = $("password").value;
+
+      if (!email || !password) {
+        throw new Error("Email aur password bharein.");
+      }
+
+      if (s.signup) {
+        const name = $("name")?.value.trim() || "";
+
+        if (password.length < 6) {
+          throw new Error("Password kam se kam 6 characters ka hona chahiye.");
+        }
+
+        // Admin account ko registration form se promote nahi karein.
+        const credential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+
+        if (name) {
+          await updateProfile(credential.user, {
+            displayName: name
+          });
+        }
+
+        await setDoc(doc(db, "users", credential.user.uid), {
+          uid: credential.user.uid,
+          email,
+          name: name || email.split("@")[0],
+          role: "student",
+          classId: "",
+          createdAt: serverTimestamp()
+        });
+
+        msg("Account created successfully!");
+      } else {
+        await signInWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+
+        msg("Login successful!");
+      }
+    } catch (e) {
+      msg(err(e));
+    } finally {
+      busy(
+        button,
+        false,
+        s.signup ? "Create account →" : "Sign in →"
+      );
+    }
+  });
+}
+
+// ============================================
+// SIGNUP / LOGIN TOGGLE
+// ============================================
+
+if ($("toggle")) {
+  $("toggle").addEventListener("click", () => {
+    s.signup = !s.signup;
+
+    const name = $("name");
+    const button = $("authButton");
+
+    if (name) {
+      name.classList.toggle("hide", !s.signup);
+    }
+
+    if (button) {
+      button.textContent = s.signup
+        ? "Create account →"
+        : "Sign in →";
+    }
+
+    const title = document.querySelector("#auth h1");
+
+    if (title) {
+      title.textContent = s.signup
+        ? "Create your account"
+        : "Sign in to continue";
+    }
+  });
+}
+
+// ============================================
+// PASSWORD RESET
+// ============================================
+
+if ($("reset")) {
+  $("reset").addEventListener("click", async () => {
+    const email = $("email")?.value.trim();
+
+    if (!email) {
+      msg("Pehle email address bharein.");
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      msg("Password reset email bhej diya gaya hai.");
+    } catch (e) {
+      msg(err(e));
+    }
+  });
+}
+
+// ============================================
+// LOGOUT
+// ============================================
+
+if ($("logout")) {
+  $("logout").addEventListener("click", async () => {
+    try {
+      await signOut(auth);
+      msg("Logged out successfully.");
+    } catch (e) {
+      msg(err(e));
+    }
+  });
+}
+
+// ============================================
+// FIRESTORE DATA LOADING
+// ============================================
+
+// Admin can read all documents.
+// Students read only their own enrollments and attempts.
+async function read(name) {
+  let snapshot;
+
+  if (
+    name === "enrollments" ||
+    name === "attempts"
+  ) {
+    if (admin()) {
+      snapshot = await getDocs(col(name));
+    } else {
+      const q = query(
+        col(name),
+        where("studentId", "==", s.user.uid)
+      );
+
+      snapshot = await getDocs(q);
+    }
+  } else {
+    snapshot = await getDocs(col(name));
+  }
+
+  return snapshot.docs.map(d => ({
+    id: d.id,
+    ...d.data()
+  }));
+}
+
+async function load() {
+  try {
+    const [
+      classes,
+      batches,
+      resources,
+      quizzes,
+      enrollments,
+      attempts
+    ] = await Promise.all([
+      read("classes"),
+      read("batches"),
+      read("resources"),
+      read("quizzes"),
+      read("enrollments"),
+      read("attempts")
+    ]);
+
+    s.classes = classes;
+    s.batches = batches;
+    s.resources = resources;
+    s.quizzes = quizzes;
+    s.enrollments = enrollments;
+    s.attempts = attempts;
+
+    options();
+    shell();
+    renderBatches();
+    renderAdmin();
+    renderProgress();
+
+  } catch (e) {
+    console.error("Load error:", e);
+
+    msg(
+      "Data load nahi hua: " +
+      err(e)
+    );
+  }
+}
+
+// ============================================
+// AUTH STATE
+// ============================================
+
+onAuthStateChanged(auth, async user => {
+  if (!user) {
+    s.user = null;
+    s.profile = null;
+
+    $("auth")?.classList.remove("hide");
+    $("app")?.classList.add("hide");
+    $("logout")?.classList.add("hide");
+
+    return;
+  }
+
+  s.user = user;
+
+  try {
+    const ref = doc(db, "users", user.uid);
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+      s.profile = snap.data();
+    } else {
+      // Never automatically grant admin privileges.
+      s.profile = {
+        uid: user.uid,
+        email: user.email,
+        name: user.displayName || user.email.split("@")[0],
+        role: "student",
+        classId: ""
+      };
+
+      await setDoc(ref, {
+        ...s.profile,
+        createdAt: serverTimestamp()
+      });
+    }
+
+    $("auth")?.classList.add("hide");
+    $("app")?.classList.remove("hide");
+    $("logout")?.classList.remove("hide");
+
+    await load();
+
+  } catch (e) {
+    console.error("Authentication/profile error:", e);
+
+    msg(
+      "Login hua, lekin profile ya data access mein problem hai: " +
+      err(e)
+    );
+  }
+});
+
+// ============================================
+// DROPDOWN OPTIONS
+// ============================================
+
+function opts(id, arr, placeholder, selected = "") {
+  const el = $(id);
+
+  if (!el) return;
+
+  const old = selected || el.value;
+
+  el.innerHTML =
+    `<option value="">${esc(placeholder)}</option>` +
+    arr.map(x =>
+      `<option value="${esc(x.id)}">${esc(x.name || "Untitled")}</option>`
+    ).join("");
+
+  if (arr.some(x => x.id === old)) {
+    el.value = old;
+  }
+}
+
+function options() {
+  opts("classFilter", s.classes, "All classes");
+  opts("profileClass", s.classes, "Choose class", s.profile?.classId);
+  opts("batchClass", s.classes, "Choose class");
+  opts("resourceClass", s.classes, "Choose class");
+  opts("quizClass", s.classes, "Choose class");
+
+  batchOpts("resourceClass", "resourceBatch");
+  batchOpts("quizClass", "quizBatch");
+}
+
+function batchOpts(classSelectId, batchSelectId) {
+  const classId = $(classSelectId)?.value;
+  const list = classId
+    ? s.batches.filter(x => x.classId === classId)
+    : s.batches;
+
+  opts(batchSelectId, list, "Choose batch");
+}
+
+$("resourceClass")?.addEventListener("change", () => {
+  batchOpts("resourceClass", "resourceBatch");
+});
+
+$("quizClass")?.addEventListener("change", () => {
+  batchOpts("quizClass", "quizBatch");
+});
+
+// ============================================
+// NAVIGATION / APP SHELL
+// ============================================
+
+function shell() {
+  const isAdmin = admin();
+
+  document.querySelectorAll("[data-view]").forEach(button => {
+    button.onclick = () => {
+      const view = button.dataset.view;
+
+      document.querySelectorAll(".view").forEach(el => {
+        el.classList.add("hide");
+      });
+
+      $(view)?.classList.remove("hide");
+    };
+
+    if (button.dataset.admin === "true") {
+      button.classList.toggle("hide", !isAdmin);
+    }
+  });
+
+  $("admin")?.classList.toggle("hide", !isAdmin);
+
+  if ($("year")) {
+    $("year").textContent = new Date().getFullYear();
+  }
+
+  $("home")?.classList.remove("hide");
+}
+
+// ============================================
+// BATCHES
+// ============================================
+
+function renderBatches() {
+  const container = $("batchList");
+
+  if (!container) return;
+
+  const list = s.batches.filter(batch =>
+    !batch.classId ||
+    !s.profile?.classId ||
+    batch.classId === s.profile.classId ||
+    admin() ||
+    enrolled(batch.id)
+  );
+
+  container.innerHTML = list.map(batch => `
+    <article class="card">
+      <h3>${esc(batch.name || "Untitled batch")}</h3>
+      <p>${esc(className(batch.classId))}</p>
+      <p>Teacher: ${esc(batch.teacher || "Not assigned")}</p>
+      ${
+        enrolled(batch.id)
+          ? `<span>Enrolled ✓</span>`
+          : `<button data-enroll="${esc(batch.id)}">Enroll</button>`
+      }
+    </article>
+  `).join("") || "<p>No batches available yet.</p>";
+
+  container.querySelectorAll("[data-enroll]").forEach(button => {
+    button.onclick = async () => {
+      if (!s.user) return;
+
+      try {
+        const batchId = button.dataset.enroll;
+
+        if (enrolled(batchId)) {
+          msg("You are already enrolled.");
+          return;
+        }
+
+        await addDoc(col("enrollments"), {
+          studentId: s.user.uid,
+          batchId,
+          classId: s.batches.find(x => x.id === batchId)?.classId || "",
+          createdAt: serverTimestamp()
+        });
+
+        msg("Enrollment successful!");
+
+        await load();
+
+      } catch (e) {
+        msg(err(e));
+      }
+    };
+  });
+}
+
+// ============================================
+// ADMIN DASHBOARD
+// ============================================
+
+function renderAdmin() {
+  const container = $("structure");
+
+  if (!container || !admin()) return;
+
+  container.innerHTML = `
+    <div class="card">
+      <h3>Admin Dashboard</h3>
+      <p>Total classes: ${s.classes.length}</p>
+      <p>Total batches: ${s.batches.length}</p>
+      <p>Total resources: ${s.resources.length}</p>
+      <p>Total quizzes: ${s.quizzes.length}</p>
+      <p>Total enrollments: ${s.enrollments.length}</p>
+    </div>
+
+    <div class="card">
+      <h3>Add Class</h3>
+      <form id="addClassForm">
+        <input id="newClassName" placeholder="Class name" required>
+        <button type="submit">Add class</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Add Batch</h3>
+      <form id="addBatchForm">
+        <input id="newBatchName" placeholder="Batch name" required>
+        <select id="newBatchClass" required>
+          <option value="">Choose class</option>
+          ${s.classes.map(x =>
+            `<option value="${esc(x.id)}">${esc(x.name)}</option>`
+          ).join("")}
+        </select>
+        <input id="newBatchTeacher" placeholder="Teacher name">
+        <button type="submit">Add batch</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Classes</h3>
+      ${s.classes.map(x => `
+        <div class="row">
+          <span>${esc(x.name)}</span>
+          <button data-delete-class="${esc(x.id)}">Delete</button>
+        </div>
+      `).join("") || "<p>No classes yet.</p>"}
+    </div>
+
+    <div class="card">
+      <h3>Batches</h3>
+      ${s.batches.map(x => `
+        <div class="row">
+          <span>${esc(x.name)} — ${esc(className(x.classId))}</span>
+          <button data-delete-batch="${esc(x.id)}">Delete</button>
+        </div>
+      `).join("") || "<p>No batches yet.</p>"}
+    </div>
+
+    <div class="card">
+      <h3>Add Resource</h3>
+      <form id="addResourceForm">
+        <input id="newResourceName" placeholder="Resource title" required>
+        <select id="newResourceType">
+          <option value="lecture">Lecture</option>
+          <option value="notes">Notes</option>
+          <option value="dpp">DPP</option>
+          <option value="material">Study material</option>
+        </select>
+        <select id="newResourceClass">
+          <option value="">Choose class</option>
+          ${s.classes.map(x =>
+            `<option value="${esc(x.id)}">${esc(x.name)}</option>`
+          ).join("")}
+        </select>
+        <select id="newResourceBatch">
+          <option value="">Choose batch</option>
+          ${s.batches.map(x =>
+            `<option value="${esc(x.id)}">${esc(x.name)}</option>`
+          ).join("")}
+        </select>
+        <input id="newResourceUrl" type="url" placeholder="https://..." required>
+        <button type="submit">Add resource</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Resources</h3>
+      ${s.resources.map(x => `
+        <div class="row">
+          <a href="${esc(x.url || "#")}" target="_blank" rel="noopener">
+            ${esc(x.name || x.title || "Resource")}
+          </a>
+          <button data-delete-resource="${esc(x.id)}">Delete</button>
+        </div>
+      `).join("") || "<p>No resources yet.</p>"}
+    </div>
+
+    <div class="card">
+      <h3>Add Quiz</h3>
+      <form id="addQuizForm">
+        <input id="newQuizTitle" placeholder="Quiz title" required>
+        <input id="newQuizQuestion" placeholder="Question" required>
+        <input id="quizOptionA" placeholder="Option A" required>
+        <input id="quizOptionB" placeholder="Option B" required>
+        <input id="quizOptionC" placeholder="Option C" required>
+        <input id="quizOptionD" placeholder="Option D" required>
+        <select id="quizCorrect">
+          <option value="0">Correct: A</option>
+          <option value="1">Correct: B</option>
+          <option value="2">Correct: C</option>
+          <option value="3">Correct: D</option>
+        </select>
+        <button type="submit">Add quiz</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Quizzes</h3>
+      ${s.quizzes.map(x => `
+        <div class="row">
+          <span>${esc(x.title || x.question || "Quiz")}</span>
+          <button data-delete-quiz="${esc(x.id)}">Delete</button>
+        </div>
+      `).join("") || "<p>No quizzes yet.</p>"}
+    </div>
+  `;
+
+  bindAdminForms(container);
+}
+
+// ============================================
+// ADMIN FORM HANDLERS
+// ============================================
+
+function bindAdminForms(container) {
+  if (!admin()) return;
+
+  $("addClassForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+
+    try {
+      const name = $("newClassName").value.trim();
+
+      if (!name) return;
+
+      await addDoc(col("classes"), {
+        name,
+        createdAt: serverTimestamp()
+      });
+
+      msg("Class added.");
+      await load();
+
+    } catch (e) {
+      msg(err(e));
+    }
+  });
+
+  $("addBatchForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+
+    try {
+      await addDoc(col("batches"), {
+        name: $("newBatchName").value.trim(),
+        classId: $("newBatchClass").value,
+        teacher: $("newBatchTeacher").value.trim(),
+        createdAt: serverTimestamp()
+      });
+
+      msg("Batch added.");
+      await load();
+
+    } catch (e) {
+      msg(err(e));
+    }
+  });
+
+  $("addResourceForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+
+    try {
+      await addDoc(col("resources"), {
+        name: $("newResourceName").value.trim(),
+        type: $("newResourceType").value,
+        classId: $("newResourceClass").value,
+        batchId: $("newResourceBatch").value,
+        url: $("newResourceUrl").value.trim(),
+        createdAt: serverTimestamp()
+      });
+
+      msg("Resource added.");
+      await load();
+
+    } catch (e) {
+      msg(err(e));
+    }
+  });
+
+  $("addQuizForm")?.addEventListener("submit", async e => {
+    e.preventDefault();
+
+    try {
+      await addDoc(col("quizzes"), {
+        title: $("newQuizTitle").value.trim(),
+        question: $("newQuizQuestion").value.trim(),
+        options: [
+          $("quizOptionA").value.trim(),
+          $("quizOptionB").value.trim(),
+          $("quizOptionC").value.trim(),
+          $("quizOptionD").value.trim()
+        ],
+        correct: Number($("quizCorrect").value),
+        createdAt: serverTimestamp()
+      });
+
+      msg("Quiz added.");
+      await load();
+
+    } catch (e) {
+      msg(err(e));
+    }
+  });
+
+  container.querySelectorAll("[data-delete-class]").forEach(button => {
+    button.onclick = async () => {
+      if (!confirm("Delete this class?")) return;
+
+      try {
+        await deleteDoc(doc(db, "classes", button.dataset.deleteClass));
+        msg("Class deleted.");
+        await load();
+      } catch (e) {
+        msg(err(e));
+      }
+    };
+  });
+
+  container.querySelectorAll("[data-delete-batch]").forEach(button => {
+    button.onclick = async () => {
+      if (!confirm("Delete this batch?")) return;
+
+      try {
+        await deleteDoc(doc(db, "batches", button.dataset.deleteBatch));
+        msg("Batch deleted.");
+        await load();
+      } catch (e) {
+        msg(err(e));
+      }
+    };
+  });
+
+  container.querySelectorAll("[data-delete-resource]").forEach(button => {
+    button.onclick = async () => {
+      if (!confirm("Delete this resource?")) return;
+
+      try {
+        await deleteDoc(doc(db, "resources", button.dataset.deleteResource));
+        msg("Resource deleted.");
+        await 
