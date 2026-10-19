@@ -491,4 +491,694 @@ async function enroll(batchId) {
   } catch (error) {
     toast(errorMessage(error));
   }
+}function renderProgress() {
+  const container = $("progressContent");
+  if (!container) return;
+
+  const attempts = isAdmin()
+    ? state.attempts
+    : state.attempts.filter(item => item.studentId === state.user?.uid);
+
+  container.innerHTML = attempts.length
+    ? attempts.map(attempt => `
+      <div class="result">
+        <b>${escapeHTML(attempt.score ?? 0)}%</b>
+        <strong>${escapeHTML(attempt.quizTitle || "Quiz result")}</strong>
+        <p>Score: ${escapeHTML(attempt.correct ?? "—")} / ${escapeHTML(attempt.total ?? "—")}</p>
+        <p>Attempted: ${escapeHTML(dateText(attempt.createdAt))}</p>
+      </div>
+    `).join("")
+    : "<p>No quiz attempts yet. Complete a quiz to see your progress here.</p>";
+}
+
+function renderProfile() {
+  if ($("profileName")) {
+    $("profileName").value =
+      state.profile?.name || state.user?.displayName || "";
+  }
+
+  if ($("profileClass")) {
+    $("profileClass").value = state.profile?.classId || "";
+  }
+
+  if ($("profileEmail")) {
+    $("profileEmail").textContent = state.user?.email || "";
+  }
+}
+
+function renderAdmin() {
+  $("admin")?.classList.toggle("hide", !isAdmin());
+
+  if (!isAdmin()) return;
+
+  renderStructureAdmin();
+  renderResourcesAdmin();
+  renderQuizAdmin();
+  renderReports();
+}
+
+function renderStructureAdmin() {
+  const list = $("structureList");
+  if (!list) return;
+
+  list.innerHTML = `
+    <h3>Classes</h3>
+    ${
+      state.classes.map(item => `
+        <div class="item">
+          <div>
+            <h4>${escapeHTML(item.name)}</h4>
+          </div>
+          <button data-delete-class="${escapeHTML(item.id)}">
+            Delete
+          </button>
+        </div>
+      `).join("") || "<p>No classes created yet.</p>"
+    }
+
+    <h3>Batches</h3>
+    ${
+      state.batches.map(item => `
+        <div class="item">
+          <div>
+            <h4>${escapeHTML(item.name)}</h4>
+            <p>
+              ${escapeHTML(classTitle(item.classId))}
+              · ${escapeHTML(item.teacher || "No teacher")}
+            </p>
+          </div>
+          <button data-delete-batch="${escapeHTML(item.id)}">
+            Delete
+          </button>
+        </div>
+      `).join("") || "<p>No batches created yet.</p>"
+    }
+  `;
+
+  list.querySelectorAll("[data-delete-class]").forEach(button => {
+    button.onclick = () =>
+      removeDocument("classes", button.dataset.deleteClass);
+  });
+
+  list.querySelectorAll("[data-delete-batch]").forEach(button => {
+    button.onclick = () =>
+      removeDocument("batches", button.dataset.deleteBatch);
+  });
+}
+
+function renderResourcesAdmin() {
+  const list = $("resourceList");
+  if (!list) return;
+
+  list.innerHTML = state.resources.map(item => `
+    <div class="item">
+      <div>
+        <h4>${escapeHTML(item.title || item.name || "Resource")}</h4>
+        <p>
+          ${escapeHTML(item.type || "material")}
+          · ${escapeHTML(classTitle(item.classId))}
+          · ${escapeHTML(batchTitle(item.batchId))}
+        </p>
+        <a
+          href="${escapeHTML(safeURL(item.url))}"
+          target="_blank"
+          rel="noopener"
+        >Open resource</a>
+      </div>
+      <button data-delete-resource="${escapeHTML(item.id)}">
+        Delete
+      </button>
+    </div>
+  `).join("") || "<p>No resources added yet.</p>";
+
+  list.querySelectorAll("[data-delete-resource]").forEach(button => {
+    button.onclick = () =>
+      removeDocument("resources", button.dataset.deleteResource);
+  });
+}
+
+function renderQuizAdmin() {
+  const list = $("quizList");
+  if (!list) return;
+
+  list.innerHTML = state.quizzes.map(item => `
+    <div class="item">
+      <div>
+        <h4>${escapeHTML(item.title || "Quiz")}</h4>
+        <p>
+          ${escapeHTML(classTitle(item.classId))}
+          · ${escapeHTML(batchTitle(item.batchId))}
+          · ${escapeHTML(item.chapter || "")}
+        </p>
+      </div>
+      <button data-delete-quiz="${escapeHTML(item.id)}">
+        Delete
+      </button>
+    </div>
+  `).join("") || "<p>No quizzes created yet.</p>";
+
+  list.querySelectorAll("[data-delete-quiz]").forEach(button => {
+    button.onclick = () =>
+      removeDocument("quizzes", button.dataset.deleteQuiz);
+  });
+}
+
+function renderReports() {
+  const container = $("reportContent");
+  if (!container) return;
+
+  if (!isAdmin()) {
+    container.textContent = "";
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Student ID</th>
+            <th>Quiz</th>
+            <th>Score</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            state.attempts.map(item => `
+              <tr>
+                <td>${escapeHTML(item.studentId || "")}</td>
+                <td>${escapeHTML(item.quizTitle || "")}</td>
+                <td>${escapeHTML(item.score ?? 0)}%</td>
+                <td>${escapeHTML(dateText(item.createdAt))}</td>
+              </tr>
+            `).join("")
+          }
+        </tbody>
+      </table>
+    </div>
+    ${state.attempts.length ? "" : "<p>No reports yet.</p>"}
+  `;
+}
+
+async function removeDocument(collectionName, id) {
+  if (!confirm("Kya aap ise delete karna chahte hain?")) {
+    return;
+  }
+
+  try {
+    await deleteDoc(doc(db, collectionName, id));
+    toast("Deleted successfully.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+}// AUTHENTICATION: Login and Signup
+$("authForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  const button = $("authButton");
+  setBusy(button, true);
+
+  try {
+    const email = $("email").value.trim().toLowerCase();
+    const password = $("password").value;
+
+    if (!email || !password) {
+      throw new Error("Email aur password bharein.");
+    }
+
+    if (state.signup) {
+      const name = $("name")?.value.trim() || "";
+
+      const credential = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+
+      if (name) {
+        await updateProfile(credential.user, {
+          displayName: name
+        });
+      }
+
+      await setDoc(doc(db, "users", credential.user.uid), {
+        uid: credential.user.uid,
+        email,
+        name: name || email.split("@")[0],
+        role: "student",
+        classId: "",
+        createdAt: serverTimestamp()
+      });
+
+      toast("Account create ho gaya!");
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+      toast("Login successful!");
+    }
+  } catch (error) {
+    toast(errorMessage(error));
+  } finally {
+    setBusy(
+      button,
+      false,
+      state.signup ? "Create account →" : "Sign in →"
+    );
+  }
+});
+
+
+// Switch between Login and Signup
+$("toggle")?.addEventListener("click", () => {
+  state.signup = !state.signup;
+
+  $("nameLabel")?.classList.toggle("hide", !state.signup);
+  $("name")?.toggleAttribute("required", state.signup);
+
+  if ($("authTitle")) {
+    $("authTitle").textContent = state.signup
+      ? "Create your account"
+      : "Sign in to continue";
+  }
+
+  if ($("authButton")) {
+    $("authButton").textContent = state.signup
+      ? "Create account →"
+      : "Sign in →";
+  }
+
+  if ($("toggle")) {
+    $("toggle").textContent = state.signup
+      ? "Already registered? Sign in"
+      : "New student? Create an account";
+  }
+});
+
+
+// Password Reset
+$("reset")?.addEventListener("click", async () => {
+  const email = $("email")?.value.trim();
+
+  if (!email) {
+    return toast("Pehle email address bharein.");
+  }
+
+  try {
+    await sendPasswordResetEmail(auth, email);
+    toast("Password reset email bhej diya gaya hai.");
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+
+// Logout
+$("logout")?.addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+    toast("Logged out.");
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+
+// Batch and Resource Filters
+$("classFilter")?.addEventListener("change", renderBatches);
+$("search")?.addEventListener("input", renderBatches);
+
+$("resourceClass")?.addEventListener("change", () => {
+  updateBatchOptions("resourceClass", "resourceBatch");
+});
+
+$("quizClass")?.addEventListener("change", () => {
+  updateBatchOptions("quizClass", "quizBatch");
+});
+
+
+// Save Student Profile
+$("profileForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  try {
+    const name = $("profileName").value.trim();
+    const classId = $("profileClass").value;
+
+    await setDoc(
+      doc(db, "users", state.user.uid),
+      {
+        name,
+        classId,
+        email: state.user.email,
+        uid: state.user.uid
+      },
+      { merge: true }
+    );
+
+    state.profile = {
+      ...state.profile,
+      name,
+      classId
+    };
+
+    toast("Profile saved.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+
+// Admin: Create Class
+$("classForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  if (!isAdmin()) {
+    return toast("Admin access required.");
+  }
+
+  try {
+    const name = $("className").value.trim();
+    if (!name) return;
+
+    await addDoc(collectionRef("classes"), {
+      name,
+      createdAt: serverTimestamp()
+    });
+
+    $("classForm").reset();
+    toast("Class added.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+
+// Admin: Create Batch
+$("batchForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  if (!isAdmin()) {
+    return toast("Admin access required.");
+  }
+
+  try {
+    await addDoc(collectionRef("batches"), {
+      name: $("batchName").value.trim(),
+      classId: $("batchClass").value,
+      teacher: $("teacher").value.trim(),
+      createdAt: serverTimestamp()
+    });
+
+    $("batchForm").reset();
+    toast("Batch added.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+
+// Admin: Add Learning Resource
+$("resourceForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  if (!isAdmin()) {
+    return toast("Admin access required.");
+  }
+
+  try {
+    const title = $("resourceTitle").value.trim();
+
+    await addDoc(collectionRef("resources"), {
+      title,
+      name: title,
+      classId: $("resourceClass").value,
+      batchId: $("resourceBatch").value,
+      chapter: $("chapter").value.trim(),
+      type: $("type").value,
+      url: safeURL($("url").value.trim()),
+      description: $("description").value.trim(),
+      createdAt: serverTimestamp()
+    });
+
+    $("resourceForm").reset();
+    toast("Resource saved.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+
+// Admin: Add Questions to Quiz
+function addQuestionEditor() {
+  const container = $("questions");
+  if (!container) return;
+
+  state.questionCount++;
+  const index = state.questionCount;
+
+  const block = document.createElement("div");
+  block.className = "question";
+  block.dataset.questionEditor = String(index);
+
+  block.innerHTML = `
+    <h4>Question ${index}</h4>
+
+    <label>
+      Question text
+      <input data-qtext required>
+    </label>
+
+    <div class="twocol">
+      <label>Option A<input data-option="0" required></label>
+      <label>Option B<input data-option="1" required></label>
+      <label>Option C<input data-option="2" required></label>
+      <label>Option D<input data-option="3" required></label>
+    </div>
+
+    <label>
+      Correct answer
+      <select data-correct>
+        <option value="0">A</option>
+        <option value="1">B</option>
+        <option value="2">C</option>
+        <option value="3">D</option>
+      </select>
+    </label>
+
+    <button type="button" data-remove-question>
+      Remove question
+    </button>
+  `;
+
+  block.querySelector("[data-remove-question]").onclick = () => {
+    block.remove();
+  };
+
+  container.appendChild(block);
+}
+
+$("addQuestion")?.addEventListener("click", addQuestionEditor);
+
+
+// Admin: Publish Quiz
+$("quizForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  if (!isAdmin()) {
+    return toast("Admin access required.");
+  }
+
+  const questionBlocks = [
+    ...document.querySelectorAll("[data-question-editor]")
+  ];
+
+  if (!questionBlocks.length) {
+    return toast("Kam se kam ek question add karein.");
+  }
+
+  try {
+    const questions = questionBlocks.map(block => ({
+      question: block.querySelector("[data-qtext]").value.trim(),
+      options: [
+        ...block.querySelectorAll("[data-option]")
+      ].map(input => input.value.trim()),
+      correct: Number(
+        block.querySelector("[data-correct]").value
+      )
+    }));
+
+    if (
+      questions.some(q =>
+        !q.question || q.options.some(option => !option)
+      )
+    ) {
+      return toast("Har question aur uske 4 options bharein.");
+    }
+
+    await addDoc(collectionRef("quizzes"), {
+      title: $("quizTitle").value.trim(),
+      chapter: $("quizChapter").value.trim(),
+      classId: $("quizClass").value,
+      batchId: $("quizBatch").value,
+      questions,
+      createdAt: serverTimestamp()
+    });
+
+    $("quizForm").reset();
+    $("questions").innerHTML = "";
+    state.questionCount = 0;
+
+    toast("Quiz publish ho gaya.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+
+// Student: Take Quiz
+async function takeQuiz(quizId) {
+  const quiz = state.quizzes.find(item => item.id === quizId);
+
+  if (!quiz) {
+    return toast("Quiz nahi mila.");
+  }
+
+  const questions = Array.isArray(quiz.questions)
+    ? quiz.questions
+    : [];
+
+  if (
+    !questions.length &&
+    quiz.question &&
+    Array.isArray(quiz.options)
+  ) {
+    questions.push({
+      question: quiz.question,
+      options: quiz.options,
+      correct: quiz.correct
+    });
+  }
+
+  if (!questions.length) {
+    return toast("Is quiz mein questions nahi hain.");
+  }
+
+  const answers = [];
+
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const options = Array.isArray(q.options)
+      ? q.options
+      : [];
+
+    const promptText =
+      `${i + 1}. ${q.question}\n` +
+      options.map((option, index) =>
+        `${String.fromCharCode(65 + index)}. ${option}`
+      ).join("\n") +
+      "\n\nApna answer A, B, C ya D likhein:";
+
+    const answer = prompt(promptText);
+
+    if (answer === null) return;
+
+    const index =
+      answer.trim().toUpperCase().charCodeAt(0) - 65;
+
+    if (index < 0 || index > 3 || !Number.isFinite(index)) {
+      toast("Answer A, B, C ya D mein dein.");
+      return;
+    }
+
+    answers.push(index);
+  }
+
+  const correct = questions.reduce(
+    (sum, q, index) =>
+      sum + (Number(q.correct) === answers[index] ? 1 : 0),
+    0
+  );
+
+  const score = Math.round(
+    correct / questions.length * 100
+  );
+
+  try {
+    await addDoc(collectionRef("attempts"), {
+      studentId: state.user.uid,
+      quizId,
+      quizTitle: quiz.title || "Quiz",
+      answers,
+      correct,
+      total: questions.length,
+      score,
+      createdAt: serverTimestamp()
+    });
+
+    toast(`Quiz complete! Score: ${score}%`);
+
+    await loadData();
+    showView("progress");
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+}
+
+
+// Firebase Login State and Initial Data Loading
+onAuthStateChanged(auth, async user => {
+  state.user = user;
+
+  if (!user) {
+    state.profile = null;
+
+    $("auth")?.classList.remove("hide");
+    $("app")?.classList.add("hide");
+    $("logout")?.classList.add("hide");
+
+    return;
+  }
+
+  try {
+    const profileRef = doc(db, "users", user.uid);
+    const profileSnapshot = await getDoc(profileRef);
+
+    if (profileSnapshot.exists()) {
+      state.profile = profileSnapshot.data();
+    } else {
+      state.profile = {
+        uid: user.uid,
+        email: user.email,
+        name: user.displayName || user.email.split("@")[0],
+        role: "student",
+        classId: ""
+      };
+
+      await setDoc(profileRef, {
+        ...state.profile,
+        createdAt: serverTimestamp()
+      });
+    }
+
+    await loadData();
+  } catch (error) {
+    console.error("StudyHub initialization:", error);
+
+    toast(
+      "Login hua, lekin data load nahi hua: " +
+      errorMessage(error)
+    );
+  }
+});
+
+
+// Show current year before login
+if ($("year")) {
+  $("year").textContent = new Date().getFullYear();
 }
