@@ -1,4 +1,3 @@
-// STUDYHUB — Complete app.js
 import { auth, db } from "./firebase.js";
 
 import {
@@ -11,8 +10,16 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 
 import {
-  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc,
-  deleteDoc, query, where, serverTimestamp
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  addDoc,
+  setDoc,
+  deleteDoc,
+  query,
+  where,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
 const ADMIN_EMAIL = "sumitpandey9891@gmail.com";
@@ -32,13 +39,11 @@ const state = {
 };
 
 const collectionRef = name => collection(db, name);
-
 const isAdmin = () =>
   state.user?.email?.toLowerCase() === ADMIN_EMAIL;
 
 function toast(message) {
   const el = $("toast");
-
   if (!el) {
     alert(message);
     return;
@@ -46,12 +51,11 @@ function toast(message) {
 
   el.textContent = message;
   el.classList.add("show");
-
   clearTimeout(el._timer);
-
-  el._timer = setTimeout(() => {
-    el.classList.remove("show");
-  }, 4500);
+  el._timer = setTimeout(
+    () => el.classList.remove("show"),
+    4500
+  );
 }
 
 function escapeHTML(value = "") {
@@ -65,18 +69,18 @@ function escapeHTML(value = "") {
 }
 
 function errorMessage(error) {
-  console.error("StudyHub:", error);
+  console.error("StudyHub error:", error);
 
   const messages = {
     "auth/invalid-credential": "Email ya password galat hai.",
-    "auth/user-not-found": "Is email se account nahi mila.",
+    "auth/user-not-found": "Account nahi mila.",
     "auth/wrong-password": "Password galat hai.",
-    "auth/email-already-in-use": "Yeh email pehle se registered hai.",
+    "auth/email-already-in-use": "Email pehle se registered hai.",
     "auth/weak-password": "Password kam se kam 6 characters ka rakhein.",
     "auth/invalid-email": "Email address sahi nahi hai.",
-    "auth/too-many-requests": "Bahut attempts hue. Kuch der baad try karein.",
+    "auth/too-many-requests": "Bahut attempts hue. Baad mein try karein.",
     "auth/network-request-failed": "Internet connection check karein.",
-    "permission-denied": "Firestore permission error. Firebase Rules check karein.",
+    "permission-denied": "Firebase Firestore Rules mein permission error hai.",
     "unavailable": "Firebase connection check karein."
   };
 
@@ -87,46 +91,33 @@ function errorMessage(error) {
 
 function setBusy(button, busy, label) {
   if (!button) return;
-
   button.disabled = busy;
-
-  if (busy) {
-    button.textContent = "Please wait...";
-  } else if (label) {
-    button.textContent = label;
-  }
+  button.textContent = busy ? "Please wait..." : label;
 }
 
 function classTitle(id) {
-  return state.classes.find(item => item.id === id)?.name ||
+  return state.classes.find(x => x.id === id)?.name ||
     "Class not selected";
 }
 
 function batchTitle(id) {
-  return state.batches.find(item => item.id === id)?.name ||
-    "Batch";
+  return state.batches.find(x => x.id === id)?.name || "Batch";
 }
 
 function myEnrollments() {
   return state.enrollments.filter(
-    item => item.studentId === state.user?.uid
+    x => x.studentId === state.user?.uid
   );
 }
 
 function isEnrolled(batchId) {
-  return myEnrollments().some(
-    item => item.batchId === batchId
-  );
+  return myEnrollments().some(x => x.batchId === batchId);
 }
 
 function dateText(value) {
   try {
     if (!value) return "—";
-
-    const date = value.toDate
-      ? value.toDate()
-      : new Date(value);
-
+    const date = value.toDate ? value.toDate() : new Date(value);
     return Number.isNaN(date.getTime())
       ? "—"
       : date.toLocaleDateString("en-IN");
@@ -138,7 +129,6 @@ function dateText(value) {
 function safeURL(value = "") {
   try {
     const url = new URL(value);
-
     return ["https:", "http:"].includes(url.protocol)
       ? url.href
       : "#";
@@ -149,44 +139,40 @@ function safeURL(value = "") {
 
 function setOptions(id, items, placeholder, selected = "") {
   const select = $(id);
-
   if (!select) return;
 
   const previous = selected || select.value;
 
   select.innerHTML =
     `<option value="">${escapeHTML(placeholder)}</option>` +
-    items.map(item => `
-      <option value="${escapeHTML(item.id)}">
-        ${escapeHTML(item.name || item.title || "Untitled")}
-      </option>
-    `).join("");
+    items.map(item =>
+      `<option value="${escapeHTML(item.id)}">${
+        escapeHTML(item.name || item.title || "Untitled")
+      }</option>`
+    ).join("");
 
   if (items.some(item => item.id === previous)) {
     select.value = previous;
   }
 }
 
-function updateBatchOptions(classSelectId, batchSelectId) {
-  const classId = $(classSelectId)?.value || "";
-
+function updateBatchOptions(classIdSelect, batchSelect) {
+  const classId = $(classIdSelect)?.value || "";
   const batches = classId
-    ? state.batches.filter(item => item.classId === classId)
+    ? state.batches.filter(x => x.classId === classId)
     : state.batches;
 
-  setOptions(batchSelectId, batches, "Choose batch");
+  setOptions(batchSelect, batches, "Choose batch");
 }
 
 function fillOptions() {
   setOptions("classFilter", state.classes, "All classes");
-
   setOptions(
     "profileClass",
     state.classes,
     "Choose class",
     state.profile?.classId || ""
   );
-
   setOptions("batchClass", state.classes, "Choose class");
   setOptions("resourceClass", state.classes, "Choose class");
   setOptions("quizClass", state.classes, "Choose class");
@@ -197,47 +183,35 @@ function fillOptions() {
 
 async function readCollection(name) {
   if (name === "enrollments" || name === "attempts") {
-    if (isAdmin()) {
-      const snapshot = await getDocs(collectionRef(name));
-
-      return snapshot.docs.map(item => ({
-        id: item.id,
-        ...item.data()
-      }));
-    }
-
     if (!state.user) return [];
 
-    const ownQuery = query(
-      collectionRef(name),
-      where("studentId", "==", state.user.uid)
-    );
+    let q;
 
-    const snapshot = await getDocs(ownQuery);
+    if (isAdmin()) {
+      q = collectionRef(name);
+    } else {
+      q = query(
+        collectionRef(name),
+        where("studentId", "==", state.user.uid)
+      );
+    }
 
-    return snapshot.docs.map(item => ({
-      id: item.id,
-      ...item.data()
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data()
     }));
   }
 
   const snapshot = await getDocs(collectionRef(name));
-
-  return snapshot.docs.map(item => ({
-    id: item.id,
-    ...item.data()
+  return snapshot.docs.map(d => ({
+    id: d.id,
+    ...d.data()
   }));
 }
 
 async function loadData() {
-  const [
-    classes,
-    batches,
-    resources,
-    quizzes,
-    enrollments,
-    attempts
-  ] = await Promise.all([
+  const results = await Promise.all([
     readCollection("classes"),
     readCollection("batches"),
     readCollection("resources"),
@@ -246,12 +220,14 @@ async function loadData() {
     readCollection("attempts")
   ]);
 
-  state.classes = classes;
-  state.batches = batches;
-  state.resources = resources;
-  state.quizzes = quizzes;
-  state.enrollments = enrollments;
-  state.attempts = attempts;
+  [
+    state.classes,
+    state.batches,
+    state.resources,
+    state.quizzes,
+    state.enrollments,
+    state.attempts
+  ] = results;
 
   fillOptions();
   renderShell();
@@ -273,17 +249,23 @@ function renderShell() {
     state.user?.email?.split("@")[0] ||
     "Student";
 
-  $("greeting").textContent = `Welcome, ${name}`;
+  if ($("greeting")) $("greeting").textContent = `Welcome, ${name}`;
 
-  $("roleText").textContent = isAdmin()
-    ? "Manage classes, learning resources and quizzes."
-    : "Your learning space is ready.";
+  if ($("roleText")) {
+    $("roleText").textContent = isAdmin()
+      ? "Manage classes, learning resources and quizzes."
+      : "Your learning space is ready.";
+  }
 
-  $("role").textContent = isAdmin() ? "ADMIN" : "STUDENT";
+  if ($("role")) {
+    $("role").textContent = isAdmin() ? "ADMIN" : "STUDENT";
+  }
 
   $("adminNav")?.classList.toggle("hide", !isAdmin());
 
-  $("year").textContent = new Date().getFullYear();
+  if ($("year")) {
+    $("year").textContent = new Date().getFullYear();
+  }
 
   document.querySelectorAll("[data-view]").forEach(button => {
     button.onclick = () => showView(button.dataset.view);
@@ -322,61 +304,61 @@ function renderHome() {
   const myBatches = state.batches.filter(batch =>
     isAdmin() ||
     isEnrolled(batch.id) ||
-    (!state.profile?.classId ||
-      batch.classId === state.profile.classId)
+    !state.profile?.classId ||
+    batch.classId === state.profile.classId
   );
 
-  $("statBatches").textContent = isAdmin()
-    ? state.batches.length
-    : myEnrollments().length;
-
-  $("statResources").textContent = state.resources.length;
-  $("statAttempts").textContent = state.attempts.length;
-
-  const scoreList = state.attempts.filter(
-    item => Number.isFinite(Number(item.score))
-  );
-
-  $("statScore").textContent = scoreList.length
-    ? `${Math.round(
-        scoreList.reduce(
-          (sum, item) => sum + Number(item.score),
-          0
-        ) / scoreList.length
-      )}%`
-    : "—";
-
-  const cards = $("homeCards");
-
-  if (cards) {
-    cards.innerHTML = myBatches.slice(0, 6).map(batch => `
-      <article>
-        <h3>${escapeHTML(batch.name || "Batch")}</h3>
-        <p>
-          ${escapeHTML(classTitle(batch.classId))}
-          · ${escapeHTML(batch.teacher || "Teacher not assigned")}
-        </p>
-        <button data-open-batches>View batches</button>
-      </article>
-    `).join("") ||
-      "<p>No batches yet. Open Batches to explore available classes.</p>";
-
-    cards.querySelectorAll("[data-open-batches]").forEach(button => {
-      button.onclick = () => showView("batches");
-    });
+  if ($("statBatches")) {
+    $("statBatches").textContent = isAdmin()
+      ? state.batches.length
+      : myEnrollments().length;
   }
 
-  if (cards && state.resources.length) {
+  if ($("statResources")) {
+    $("statResources").textContent = state.resources.length;
+  }
+
+  if ($("statAttempts")) {
+    $("statAttempts").textContent = state.attempts.length;
+  }
+
+  const scores = state.attempts.filter(
+    x => Number.isFinite(Number(x.score))
+  );
+
+  if ($("statScore")) {
+    $("statScore").textContent = scores.length
+      ? Math.round(
+          scores.reduce((sum, x) => sum + Number(x.score), 0) /
+          scores.length
+        ) + "%"
+      : "—";
+  }
+
+  const cards = $("homeCards");
+  if (!cards) return;
+
+  cards.innerHTML = myBatches.slice(0, 6).map(batch => `
+    <article>
+      <h3>${escapeHTML(batch.name || "Batch")}</h3>
+      <p>${escapeHTML(classTitle(batch.classId))}</p>
+      <p>${escapeHTML(batch.teacher || "Teacher not assigned")}</p>
+      <button data-open-batches>View batches</button>
+    </article>
+  `).join("") || "<p>No batches yet.</p>";
+
+  cards.querySelectorAll("[data-open-batches]").forEach(button => {
+    button.onclick = () => showView("batches");
+  });
+
+  if (state.resources.length) {
     cards.insertAdjacentHTML("beforeend", `
       <article>
-        <h3>Latest learning resources</h3>
+        <h3>Learning resources</h3>
         ${state.resources.slice(0, 3).map(resource => `
           <p>
-            <a
-              href="${escapeHTML(safeURL(resource.url))}"
-              target="_blank"
-              rel="noopener"
-            >
+            <a href="${escapeHTML(safeURL(resource.url))}"
+               target="_blank" rel="noopener">
               ${escapeHTML(resource.title || resource.name || "Open resource")}
             </a>
           </p>
@@ -388,32 +370,396 @@ function renderHome() {
 
 function renderBatches() {
   const container = $("batchCards");
-
   if (!container) return;
 
   const classId = $("classFilter")?.value || "";
   const search = ($("search")?.value || "").trim().toLowerCase();
 
   const list = state.batches.filter(batch => {
-    const classMatches =
-      !classId || batch.classId === classId;
-
-    const searchMatches =
-      !search ||
-      `${batch.name || ""} ${batch.teacher || ""} ${classTitle(batch.classId)}`
-        .toLowerCase()
-        .includes(search);
-
-    const access =
+    const matchesClass = !classId || batch.classId === classId;
+    const text = `${batch.name || ""} ${batch.teacher || ""} ${classTitle(batch.classId)}`.toLowerCase();
+    const matchesSearch = !search || text.includes(search);
+    const allowed =
       isAdmin() ||
       !state.profile?.classId ||
       batch.classId === state.profile.classId ||
       isEnrolled(batch.id);
 
-    return classMatches && searchMatches && access;
+    return matchesClass && matchesSearch && allowed;
   });
 
   container.innerHTML = list.map(batch => `
+    <article>
+      <h3>${escapeHTML(batch.name || "Batch")}</h3>
+      <p>Class: ${escapeHTML(classTitle(batch.classId))}</p>
+      <p>Teacher: ${escapeHTML(batch.teacher || "Not assigned")}</p>
+
+      ${
+        isEnrolled(batch.id)
+          ? '<span class="pill">Enrolled ✓</span>'
+          : `<button data-enroll="${escapeHTML(batch.id)}">Enroll</button>`
+      }
+
+      <div>
+        ${state.resources.filter(r => r.batchId === batch.id).map(r => `
+          <p>
+            📘 <a href="${escapeHTML(safeURL(r.url))}"
+                  target="_blank" rel="noopener">
+              ${escapeHTML(r.title || r.name || "Resource")}
+            </a>
+          </p>
+        `).join("")}
+      </div>
+
+      <div>
+        ${state.quizzes.filter(q => q.batchId === batch.id).map(q => `
+          <p>
+            📝 ${escapeHTML(q.title || "Quiz")}
+            <button data-take-quiz="${escapeHTML(q.id)}">Take quiz</button>
+          </p>
+        `).join("")}
+      </div>
+    </article>
+  `).join("") || "<p>No batches found.</p>";
+
+  container.querySelectorAll("[data-enroll]").forEach(button => {
+    button.onclick = () => enroll(button.dataset.enroll);
+  });
+
+  container.querySelectorAll("[data-take-quiz]").forEach(button => {
+    button.onclick = () => takeQuiz(button.dataset.takeQuiz);
+  });
+}
+
+async function enroll(batchId) {
+  if (!state.user) return;
+  if (isEnrolled(batchId)) return toast("Already enrolled.");
+
+  try {
+    const batch = state.batches.find(x => x.id === batchId);
+
+    await addDoc(collectionRef("enrollments"), {
+      studentId: state.user.uid,
+      batchId,
+      classId: batch?.classId || "",
+      createdAt: serverTimestamp()
+    });
+
+    toast("Enrollment successful!");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+}
+
+function renderProgress() {
+  const container = $("progressContent");
+  if (!container) return;
+
+  container.innerHTML = state.attempts.length
+    ? state.attempts.map(item => `
+      <div class="result">
+        <b>${escapeHTML(item.score ?? 0)}%</b>
+        <strong>${escapeHTML(item.quizTitle || "Quiz result")}</strong>
+        <p>Score: ${escapeHTML(item.correct ?? "—")} / ${escapeHTML(item.total ?? "—")}</p>
+        <p>Attempted: ${escapeHTML(dateText(item.createdAt))}</p>
+      </div>
+    `).join("")
+    : "<p>No quiz attempts yet.</p>";
+}
+
+function renderProfile() {
+  if ($("profileName")) {
+    $("profileName").value =
+      state.profile?.name || state.user?.displayName || "";
+  }
+
+  if ($("profileClass")) {
+    $("profileClass").value = state.profile?.classId || "";
+  }
+
+  if ($("profileEmail")) {
+    $("profileEmail").textContent = state.user?.email || "";
+  }
+}
+
+function renderAdmin() {
+  $("admin")?.classList.toggle("hide", !isAdmin());
+  if (!isAdmin()) return;
+
+  renderStructureAdmin();
+  renderResourcesAdmin();
+  renderQuizAdmin();
+  renderReports();
+}
+
+function renderStructureAdmin() {
+  const list = $("structureList");
+  if (!list) return;
+
+  list.innerHTML = `
+    <h3>Classes</h3>
+    ${state.classes.map(item => `
+      <div class="item">
+        <h4>${escapeHTML(item.name)}</h4>
+        <button data-delete-class="${escapeHTML(item.id)}">Delete</button>
+      </div>
+    `).join("") || "<p>No classes created yet.</p>"}
+
+    <h3>Batches</h3>
+    ${state.batches.map(item => `
+      <div class="item">
+        <h4>${escapeHTML(item.name)}</h4>
+        <p>${escapeHTML(classTitle(item.classId))}</p>
+        <button data-delete-batch="${escapeHTML(item.id)}">Delete</button>
+      </div>
+    `).join("") || "<p>No batches created yet.</p>"}
+  `;
+
+  list.querySelectorAll("[data-delete-class]").forEach(button => {
+    button.onclick = () => removeDocument("classes", button.dataset.deleteClass);
+  });
+
+  list.querySelectorAll("[data-delete-batch]").forEach(button => {
+    button.onclick = () => removeDocument("batches", button.dataset.deleteBatch);
+  });
+}
+
+function renderResourcesAdmin() {
+  const list = $("resourceList");
+  if (!list) return;
+
+  list.innerHTML = state.resources.map(item => `
+    <div class="item">
+      <h4>${escapeHTML(item.title || item.name || "Resource")}</h4>
+      <p>${escapeHTML(item.type || "material")} · ${escapeHTML(batchTitle(item.batchId))}</p>
+      <a href="${escapeHTML(safeURL(item.url))}" target="_blank" rel="noopener">Open resource</a>
+      <button data-delete-resource="${escapeHTML(item.id)}">Delete</button>
+    </div>
+  `).join("") || "<p>No resources added yet.</p>";
+
+  list.querySelectorAll("[data-delete-resource]").forEach(button => {
+    button.onclick = () => removeDocument("resources", button.dataset.deleteResource);
+  });
+}
+
+function renderQuizAdmin() {
+  const list = $("quizList");
+  if (!list) return;
+
+  list.innerHTML = state.quizzes.map(item => `
+    <div class="item">
+      <h4>${escapeHTML(item.title || "Quiz")}</h4>
+      <p>${escapeHTML(classTitle(item.classId))} · ${escapeHTML(batchTitle(item.batchId))}</p>
+      <button data-delete-quiz="${escapeHTML(item.id)}">Delete</button>
+    </div>
+  `).join("") || "<p>No quizzes created yet.</p>";
+
+  list.querySelectorAll("[data-delete-quiz]").forEach(button => {
+    button.onclick = () => removeDocument("quizzes", button.dataset.deleteQuiz);
+  });
+}
+
+function renderReports() {
+  const container = $("reportContent");
+  if (!container) return;
+
+  container.innerHTML = state.attempts.map(item => `
+    <div class="item">
+      <p>Student: ${escapeHTML(item.studentId || "")}</p>
+      <p>Quiz: ${escapeHTML(item.quizTitle || "")}</p>
+      <p>Score: ${escapeHTML(item.score ?? 0)}%</p>
+      <p>Date: ${escapeHTML(dateText(item.createdAt))}</p>
+    </div>
+  `).join("") || "<p>No reports yet.</p>";
+}
+
+async function removeDocument(collectionName, id) {
+  if (!confirm("Kya aap ise delete karna chahte hain?")) return;
+
+  try {
+    await deleteDoc(doc(db, collectionName, id));
+    toast("Deleted successfully.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+}
+
+/* LOGIN AND SIGNUP */
+$("authForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const button = $("authButton");
+  const email = $("email")?.value.trim().toLowerCase();
+  const password = $("password")?.value;
+
+  if (!email || !password) {
+    toast("Email aur password bharein.");
+    return;
+  }
+
+  setBusy(button, true, "");
+
+  try {
+    if (state.signup) {
+      const name = $("name")?.value.trim() || "";
+      const credential = await createUserWithEmailAndPassword(auth, email, password);
+
+      if (name) {
+        await updateProfile(credential.user, { displayName: name });
+      }
+
+      await setDoc(doc(db, "users", credential.user.uid), {
+        uid: credential.user.uid,
+        email,
+        name: name || email.split("@")[0],
+        role: "student",
+        classId: "",
+        createdAt: serverTimestamp()
+      });
+
+      toast("Account create ho gaya!");
+    } else {
+      await signInWithEmailAndPassword(auth, email, password);
+      toast("Login successful!");
+    }
+  } catch (error) {
+    toast(errorMessage(error));
+  } finally {
+    setBusy(
+      button,
+      false,
+      state.signup ? "Create account →" : "Sign in →"
+    );
+  }
+});
+
+$("toggle")?.addEventListener("click", () => {
+  state.signup = !state.signup;
+
+  $("nameLabel")?.classList.toggle("hide", !state.signup);
+  $("name")?.toggleAttribute("required", state.signup);
+
+  $("authTitle").textContent = state.signup
+    ? "Create your account"
+    : "Sign in to continue";
+
+  $("authButton").textContent = state.signup
+    ? "Create account →"
+    : "Sign in →";
+
+  $("toggle").textContent = state.signup
+    ? "Already registered? Sign in"
+    : "New student? Create an account";
+});
+
+$("reset")?.addEventListener("click", async () => {
+  const email = $("email")?.value.trim();
+  if (!email) return toast("Pehle email address bharein.");
+
+  try {
+    await sendPasswordResetEmail(auth, email);
+    toast("Password reset email bhej diya gaya hai.");
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+$("logout")?.addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+    toast("Logged out.");
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+$("classFilter")?.addEventListener("change", renderBatches);
+$("search")?.addEventListener("input", renderBatches);
+
+$("resourceClass")?.addEventListener("change", () => {
+  updateBatchOptions("resourceClass", "resourceBatch");
+});
+
+$("quizClass")?.addEventListener("change", () => {
+  updateBatchOptions("quizClass", "quizBatch");
+});
+
+$("profileForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+
+  try {
+    const name = $("profileName").value.trim();
+    const classId = $("profileClass").value;
+
+    await setDoc(doc(db, "users", state.user.uid), {
+      uid: state.user.uid,
+      email: state.user.email,
+      name,
+      classId
+    }, { merge: true });
+
+    state.profile = { ...state.profile, name, classId };
+    toast("Profile saved.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+$("classForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!isAdmin()) return toast("Admin access required.");
+
+  try {
+    await addDoc(collectionRef("classes"), {
+      name: $("className").value.trim(),
+      createdAt: serverTimestamp()
+    });
+
+    $("classForm").reset();
+    toast("Class added.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+$("batchForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!isAdmin()) return toast("Admin access required.");
+
+  try {
+    await addDoc(collectionRef("batches"), {
+      name: $("batchName").value.trim(),
+      classId: $("batchClass").value,
+      teacher: $("teacher").value.trim(),
+      createdAt: serverTimestamp()
+    });
+
+    $("batchForm").reset();
+    toast("Batch added.");
+    await loadData();
+  } catch (error) {
+    toast(errorMessage(error));
+  }
+});
+
+$("resourceForm")?.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!isAdmin()) return toast("Admin access required.");
+
+  try {
+    const title = $("resourceTitle").value.trim();
+
+    await addDoc(collectionRef("resources"), {
+      title,
+      name: title,
+      classId: $("resourceClass").value,
+      batchId: $("resourceBatch").value,
+      chaner.innerHTML = list.map(batch => `
     <article>
       <h3>${escapeHTML(batch.name || "Untitled batch")}</h3>
       <p>Class: ${escapeHTML(classTitle(batch.classId))}</p>
