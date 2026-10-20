@@ -39,11 +39,13 @@ const state = {
 };
 
 const collectionRef = name => collection(db, name);
+
 const isAdmin = () =>
   state.user?.email?.toLowerCase() === ADMIN_EMAIL;
 
 function toast(message) {
   const el = $("toast");
+
   if (!el) {
     alert(message);
     return;
@@ -51,7 +53,9 @@ function toast(message) {
 
   el.textContent = message;
   el.classList.add("show");
+
   clearTimeout(el._timer);
+
   el._timer = setTimeout(
     () => el.classList.remove("show"),
     4500
@@ -91,6 +95,7 @@ function errorMessage(error) {
 
 function setBusy(button, busy, label) {
   if (!button) return;
+
   button.disabled = busy;
   button.textContent = busy ? "Please wait..." : label;
 }
@@ -117,7 +122,11 @@ function isEnrolled(batchId) {
 function dateText(value) {
   try {
     if (!value) return "—";
-    const date = value.toDate ? value.toDate() : new Date(value);
+
+    const date = value.toDate
+      ? value.toDate()
+      : new Date(value);
+
     return Number.isNaN(date.getTime())
       ? "—"
       : date.toLocaleDateString("en-IN");
@@ -129,6 +138,7 @@ function dateText(value) {
 function safeURL(value = "") {
   try {
     const url = new URL(value);
+
     return ["https:", "http:"].includes(url.protocol)
       ? url.href
       : "#";
@@ -158,6 +168,7 @@ function setOptions(id, items, placeholder, selected = "") {
 
 function updateBatchOptions(classIdSelect, batchSelect) {
   const classId = $(classIdSelect)?.value || "";
+
   const batches = classId
     ? state.batches.filter(x => x.classId === classId)
     : state.batches;
@@ -167,12 +178,14 @@ function updateBatchOptions(classIdSelect, batchSelect) {
 
 function fillOptions() {
   setOptions("classFilter", state.classes, "All classes");
+
   setOptions(
     "profileClass",
     state.classes,
     "Choose class",
     state.profile?.classId || ""
   );
+
   setOptions("batchClass", state.classes, "Choose class");
   setOptions("resourceClass", state.classes, "Choose class");
   setOptions("quizClass", state.classes, "Choose class");
@@ -197,6 +210,7 @@ async function readCollection(name) {
     }
 
     const snapshot = await getDocs(q);
+
     return snapshot.docs.map(d => ({
       id: d.id,
       ...d.data()
@@ -204,10 +218,33 @@ async function readCollection(name) {
   }
 
   const snapshot = await getDocs(collectionRef(name));
+
   return snapshot.docs.map(d => ({
     id: d.id,
     ...d.data()
   }));
+}
+
+async function loadProfile(user) {
+  if (!user) {
+    state.profile = null;
+    return;
+  }
+
+  const profileRef = doc(db, "users", user.uid);
+  const snapshot = await getDoc(profileRef);
+
+  state.profile = snapshot.exists()
+    ? snapshot.data()
+    : {
+        name: user.displayName ||
+          user.email?.split("@")[0] ||
+          "Student",
+        email: user.email || "",
+        role: user.email?.toLowerCase() === ADMIN_EMAIL
+          ? "admin"
+          : "student"
+      };
 }
 
 async function loadData() {
@@ -249,45 +286,19 @@ function renderShell() {
     state.user?.email?.split("@")[0] ||
     "Student";
 
-  if ($("greeting")) $("greeting").textContent = `Welcome, ${name}`;
-
-  if ($("roleText")) {
-    $("roleText").textContent = isAdmin()
-      ? "Manage classes, learning resources and quizzes."
-      : "Your learning space is ready.";
+  if ($("welcomeName")) {
+    $("welcomeName").textContent = name;
   }
 
-  if ($("role")) {
-    $("role").textContent = isAdmin() ? "ADMIN" : "STUDENT";
+  if ($("userName")) {
+    $("userName").textContent = name;
   }
 
-  $("adminNav")?.classList.toggle("hide", !isAdmin());
-
-  if ($("year")) {
-    $("year").textContent = new Date().getFullYear();
-  }
-
-  document.querySelectorAll("[data-view]").forEach(button => {
-    button.onclick = () => showView(button.dataset.view);
-  });
-
-  document.querySelectorAll("[data-admin]").forEach(button => {
-    button.onclick = () => {
-      document.querySelectorAll(".adminview").forEach(view => {
-        view.classList.add("hide");
-      });
-
-      $(button.dataset.admin)?.classList.remove("hide");
-
-      document.querySelectorAll("[data-admin]").forEach(item => {
-        item.classList.toggle("active", item === button);
-      });
-    };
-  });
-
-  showView("home");
-  }
-function showView(viewName) {
+  document.querySelectorAll("[data-admin-only]")
+    .forEach(el => {
+      el.classList.toggle("hide", !isAdmin());
+    });
+}function showView(viewName) {
   document.querySelectorAll(".view").forEach(view => {
     view.classList.add("hide");
   });
@@ -304,43 +315,76 @@ function showView(viewName) {
 }
 
 function renderHome() {
-  const classesCount = $("homeClasses");
-  const resourcesCount = $("homeResources");
-  const quizzesCount = $("homeQuizzes");
-  const batchesCount = $("homeBatches");
+  const average = state.attempts.length
+    ? Math.round(
+        state.attempts.reduce(
+          (sum, item) =>
+            sum +
+            (Number(item.total)
+              ? Number(item.score || 0) /
+                Number(item.total) *
+                100
+              : 0),
+          0
+        ) / state.attempts.length
+      ) + "%"
+    : "—";
 
-  if (classesCount) classesCount.textContent = state.classes.length;
-  if (resourcesCount) resourcesCount.textContent = state.resources.length;
-  if (quizzesCount) quizzesCount.textContent = state.quizzes.length;
-  if (batchesCount) batchesCount.textContent = state.batches.length;
+  const stats = {
+    statBatches: state.batches.length,
+    statResources: state.resources.length,
+    statAttempts: state.attempts.length,
+    statScore: average
+  };
 
-  const container = $("recentResources");
+  Object.entries(stats).forEach(([id, value]) => {
+    const el = $(id);
+    if (el) el.textContent = value;
+  });
+
+  const container = $("homeCards");
   if (!container) return;
 
   const recent = [...state.resources].slice(0, 5);
 
   container.innerHTML = recent.length
     ? recent.map(resource => `
-      <div class="resource-item">
+      <article class="card">
         <h3>${escapeHTML(resource.title || "Learning resource")}</h3>
         <p>${escapeHTML(resource.description || "")}</p>
-        ${resource.link
-          ? `<a href="${safeURL(resource.link)}" target="_blank" rel="noopener">Open resource</a>`
-          : ""}
-      </div>
+        <p>${escapeHTML(resource.type || "Study material")}</p>
+        <a
+          href="${safeURL(resource.link || resource.url || "")}"
+          target="_blank"
+          rel="noopener"
+        >Open resource</a>
+      </article>
     `).join("")
     : "<p>No resources available yet.</p>";
 }
 
 function renderBatches() {
-  const container = $("batchesList");
+  const container = $("batchCards");
   if (!container) return;
 
   const selectedClass = $("classFilter")?.value || "";
+  const searchTerm =
+    $("search")?.value.trim().toLowerCase() || "";
 
-  const batches = state.batches.filter(batch =>
-    !selectedClass || batch.classId === selectedClass
-  );
+  const batches = state.batches.filter(batch => {
+    const matchesClass =
+      !selectedClass || batch.classId === selectedClass;
+
+    const searchable =
+      `${batch.name || batch.title || ""} ` +
+      `${batch.teacher || ""} ` +
+      `${batch.description || ""}`.toLowerCase();
+
+    return (
+      matchesClass &&
+      (!searchTerm || searchable.includes(searchTerm))
+    );
+  });
 
   container.innerHTML = batches.length
     ? batches.map(batch => `
@@ -349,16 +393,19 @@ function renderBatches() {
         <p>${escapeHTML(batch.description || "")}</p>
         <p>Class: ${escapeHTML(classTitle(batch.classId))}</p>
         <p>Schedule: ${escapeHTML(batch.schedule || "Not specified")}</p>
+
         ${
           isEnrolled(batch.id)
             ? '<span class="badge">Enrolled</span>'
             : `<button type="button" data-enroll="${escapeHTML(batch.id)}">Enroll</button>`
         }
+
         ${
           batch.link
             ? `<a href="${safeURL(batch.link)}" target="_blank" rel="noopener">Open batch</a>`
             : ""
         }
+
         ${
           isAdmin()
             ? `<button type="button" data-delete-batch="${escapeHTML(batch.id)}">Delete</button>`
@@ -370,18 +417,22 @@ function renderBatches() {
 }
 
 function renderProgress() {
-  const container = $("progressList");
+  const container = $("progressContent");
   if (!container) return;
 
   const attempts = state.attempts.filter(
-    attempt => isAdmin() || attempt.studentId === state.user?.uid
+    attempt =>
+      isAdmin() || attempt.studentId === state.user?.uid
   );
 
   container.innerHTML = attempts.length
     ? attempts.map(attempt => `
       <article class="card">
         <h3>${escapeHTML(attempt.quizTitle || "Quiz")}</h3>
-        <p>Score: ${Number(attempt.score || 0)} / ${Number(attempt.total || 0)}</p>
+        <p>
+          Score: ${Number(attempt.score || 0)} /
+          ${Number(attempt.total || 0)}
+        </p>
         <p>Date: ${dateText(attempt.createdAt)}</p>
       </article>
     `).join("")
@@ -391,47 +442,64 @@ function renderProgress() {
 function renderProfile() {
   const profile = state.profile || {};
 
-  if ($("profileName")) $("profileName").value = profile.name || "";
-  if ($("profileEmail")) $("profileEmail").value = state.user?.email || "";
-  if ($("profilePhone")) $("profilePhone").value = profile.phone || "";
-  if ($("profileClass")) $("profileClass").value = profile.classId || "";
+  if ($("profileName")) {
+    $("profileName").value = profile.name || "";
+  }
+
+  if ($("profileEmail")) {
+    $("profileEmail").textContent = state.user?.email || "";
+  }
+
+  if ($("profilePhone")) {
+    $("profilePhone").value = profile.phone || "";
+  }
+
+  if ($("profileClass")) {
+    $("profileClass").value = profile.classId || "";
+  }
 }
 
 function renderAdmin() {
   if (!isAdmin()) return;
 
-  const classesList = $("adminClassesList");
+  const classesList = $("structureList");
 
   if (classesList) {
     classesList.innerHTML = state.classes.map(item => `
       <article class="card">
         <h3>${escapeHTML(item.name || item.title || "Class")}</h3>
         <p>${escapeHTML(item.description || "")}</p>
-        <button type="button" data-delete-class="${escapeHTML(item.id)}">Delete</button>
+        <button type="button" data-delete-class="${escapeHTML(item.id)}">
+          Delete
+        </button>
       </article>
     `).join("");
   }
 
-  const resourcesList = $("adminResourcesList");
+  const resourcesList = $("resourceList");
 
   if (resourcesList) {
     resourcesList.innerHTML = state.resources.map(item => `
       <article class="card">
         <h3>${escapeHTML(item.title || "Resource")}</h3>
         <p>${escapeHTML(item.type || "Resource")}</p>
-        <button type="button" data-delete-resource="${escapeHTML(item.id)}">Delete</button>
+        <button type="button" data-delete-resource="${escapeHTML(item.id)}">
+          Delete
+        </button>
       </article>
     `).join("");
   }
 
-  const quizzesList = $("adminQuizzesList");
+  const quizzesList = $("quizList");
 
   if (quizzesList) {
     quizzesList.innerHTML = state.quizzes.map(item => `
       <article class="card">
         <h3>${escapeHTML(item.title || "Quiz")}</h3>
         <p>${Number(item.questions?.length || 0)} questions</p>
-        <button type="button" data-delete-quiz="${escapeHTML(item.id)}">Delete</button>
+        <button type="button" data-delete-quiz="${escapeHTML(item.id)}">
+          Delete
+        </button>
       </article>
     `).join("");
   }
@@ -478,7 +546,9 @@ async function deleteItem(collectionName, id) {
     return;
   }
 
-  if (!confirm("Are you sure you want to delete this item?")) return;
+  if (!confirm("Are you sure you want to delete this item?")) {
+    return;
+  }
 
   try {
     await deleteDoc(doc(db, collectionName, id));
@@ -499,14 +569,18 @@ async function saveProfile(event) {
   const classId = $("profileClass")?.value || "";
 
   try {
-    await setDoc(doc(db, "users", state.user.uid), {
-      name,
-      phone,
-      classId,
-      email: state.user.email || "",
-      role: isAdmin() ? "admin" : "student",
-      updatedAt: serverTimestamp()
-    }, { merge: true });
+    await setDoc(
+      doc(db, "users", state.user.uid),
+      {
+        name,
+        phone,
+        classId,
+        email: state.user.email || "",
+        role: isAdmin() ? "admin" : "student",
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
 
     state.profile = {
       ...state.profile,
@@ -521,7 +595,8 @@ async function saveProfile(event) {
   } catch (error) {
     errorMessage(error);
   }
-          }
+}
+
 async function createClass(event) {
   event.preventDefault();
 
@@ -531,7 +606,8 @@ async function createClass(event) {
   }
 
   const name = $("className")?.value.trim() || "";
-  const description = $("classDescription")?.value.trim() || "";
+  const description =
+    $("classDescription")?.value.trim() || "";
 
   if (!name) {
     toast("Please enter a class name.");
@@ -564,9 +640,10 @@ async function createBatch(event) {
 
   const name = $("batchName")?.value.trim() || "";
   const classId = $("batchClass")?.value || "";
-  const description = $("batchDescription")?.value.trim() || "";
+  const description =
+    $("batchDescription")?.value.trim() || "";
   const schedule = $("batchSchedule")?.value.trim() || "";
-  const link = $("batchLink")?.value.trim() || "";
+  const teacher = $("teacher")?.value.trim() || "";  const link = $("batchLink")?.value.trim() || "";
 
   if (!name || !classId) {
     toast("Please enter the batch name and select a class.");
@@ -579,6 +656,7 @@ async function createBatch(event) {
       classId,
       description,
       schedule,
+      teacher,
       link,
       createdAt: serverTimestamp(),
       createdBy: state.user.uid
@@ -601,11 +679,12 @@ async function createResource(event) {
   }
 
   const title = $("resourceTitle")?.value.trim() || "";
-  const type = $("resourceType")?.value || "Notes";
+  const type = $("type")?.value || "notes";
   const classId = $("resourceClass")?.value || "";
   const batchId = $("resourceBatch")?.value || "";
-  const description = $("resourceDescription")?.value.trim() || "";
-  const link = $("resourceLink")?.value.trim() || "";
+  const description = $("description")?.value.trim() || "";
+  const chapter = $("chapter")?.value.trim() || "";
+  const link = $("url")?.value.trim() || "";
 
   if (!title || !link) {
     toast("Please enter a title and resource link.");
@@ -624,6 +703,7 @@ async function createResource(event) {
       classId,
       batchId,
       description,
+      chapter,
       link,
       createdAt: serverTimestamp(),
       createdBy: state.user.uid
@@ -647,6 +727,7 @@ async function createQuiz(event) {
 
   const title = $("quizTitle")?.value.trim() || "";
   const description = $("quizDescription")?.value.trim() || "";
+  const chapter = $("quizChapter")?.value.trim() || "";
   const classId = $("quizClass")?.value || "";
   const batchId = $("quizBatch")?.value || "";
 
@@ -658,21 +739,19 @@ async function createQuiz(event) {
   const questions = Array.from(
     document.querySelectorAll(".quiz-question")
   ).map((item, index) => {
-    const question = item.querySelector("[name='question']")?.value.trim() || "";
+    const question =
+      item.querySelector("[name='question']")?.value.trim() || "";
+
     const options = [
       item.querySelector("[name='optionA']")?.value.trim() || "",
       item.querySelector("[name='optionB']")?.value.trim() || "",
       item.querySelector("[name='optionC']")?.value.trim() || "",
       item.querySelector("[name='optionD']")?.value.trim() || ""
     ];
+
     const answer = item.querySelector("[name='answer']")?.value || "";
 
-    return {
-      index,
-      question,
-      options,
-      answer
-    };
+    return { index, question, options, answer };
   }).filter(item =>
     item.question &&
     item.options.every(Boolean) &&
@@ -688,6 +767,7 @@ async function createQuiz(event) {
     await addDoc(collectionRef("quizzes"), {
       title,
       description,
+      chapter,
       classId,
       batchId,
       questions,
@@ -697,10 +777,11 @@ async function createQuiz(event) {
 
     event.target.reset();
 
-    const questionContainer = $("quizQuestions");
+    const questionContainer = $("questions");
     if (questionContainer) questionContainer.innerHTML = "";
 
     state.questionCount = 0;
+
     toast("Quiz created successfully.");
     await refreshData();
   } catch (error) {
@@ -709,7 +790,7 @@ async function createQuiz(event) {
 }
 
 function addQuizQuestion() {
-  const container = $("quizQuestions");
+  const container = $("questions");
 
   if (!container) {
     toast("Quiz question container not found.");
@@ -718,13 +799,11 @@ function addQuizQuestion() {
 
   state.questionCount += 1;
 
-  const number = state.questionCount;
   const item = document.createElement("div");
-
   item.className = "quiz-question card";
 
   item.innerHTML = `
-    <h3>Question ${number}</h3>
+    <h3>Question ${state.questionCount}</h3>
 
     <label>
       Question
@@ -747,7 +826,8 @@ function addQuizQuestion() {
       <input name="optionD" type="text" required>
     </label>
 
-    <label>Correct answer
+    <label>
+      Correct answer
       <select name="answer" required>
         <option value="">Choose answer</option>
         <option value="0">Option A</option>
@@ -757,7 +837,9 @@ function addQuizQuestion() {
       </select>
     </label>
 
-    <button type="button" class="remove-question">Remove question</button>
+    <button type="button" class="remove-question">
+      Remove question
+    </button>
   `;
 
   item.querySelector(".remove-question").addEventListener("click", () => {
@@ -781,13 +863,13 @@ function openQuiz(quizId) {
   }
 
   const container = $("quizPlayer");
+
   if (!container) {
     toast("Quiz player container not found.");
     return;
   }
 
   const view = $("quizPlayerView");
-
   if (view) view.classList.remove("hide");
 
   container.innerHTML = `
@@ -827,9 +909,7 @@ function openQuiz(quizId) {
   $("quizAttemptForm")?.addEventListener("submit", async event => {
     event.preventDefault();
 
-    const form = event.currentTarget;
-    const data = new FormData(form);
-
+    const data = new FormData(event.currentTarget);
     let score = 0;
 
     quiz.questions.forEach((question, index) => {
@@ -841,6 +921,7 @@ function openQuiz(quizId) {
     try {
       await addDoc(collectionRef("attempts"), {
         studentId: state.user.uid,
+        studentEmail: state.user.email || "",
         quizId: quiz.id,
         quizTitle: quiz.title || "Quiz",
         score,
@@ -848,7 +929,7 @@ function openQuiz(quizId) {
         createdAt: serverTimestamp()
       });
 
-      toast(`Quiz submitted. Your score: ${score}/${quiz.questions.length}`);
+      toast(`Quiz submitted! Your score: ${score}/${quiz.questions.length}`);
 
       if (view) view.classList.add("hide");
 
@@ -857,8 +938,25 @@ function openQuiz(quizId) {
       errorMessage(error);
     }
   });
-                 }
-async function handleLogin(event) {
+}
+
+function renderQuizzes() {
+  const container = $("quizCards");
+  if (!container) return;
+
+  container.innerHTML = state.quizzes.length
+    ? state.quizzes.map(quiz => `
+      <article class="card">
+        <h3>${escapeHTML(quiz.title || "Quiz")}</h3>
+        <p>${escapeHTML(quiz.description || "")}</p>
+        <p>Questions: ${Number(quiz.questions?.length || 0)}</p>
+        <button type="button" data-open-quiz="${escapeHTML(quiz.id)}">
+          Start quiz
+        </button>
+      </article>
+    `).join("")
+    : "<p>No quizzes available yet.</p>";
+}async function handleLogin(event) {
   event.preventDefault();
 
   const email = $("email")?.value.trim() || "";
@@ -905,13 +1003,17 @@ async function handleSignup(event) {
     );
 
     if (name) {
-      await updateProfile(result.user, { displayName: name });
+      await updateProfile(result.user, {
+        displayName: name
+      });
     }
 
     await setDoc(doc(db, "users", result.user.uid), {
       name: name || email.split("@")[0],
       email,
-      role: email.toLowerCase() === ADMIN_EMAIL ? "admin" : "student",
+      role: email.toLowerCase() === ADMIN_EMAIL
+        ? "admin"
+        : "student",
       createdAt: serverTimestamp()
     });
 
@@ -950,7 +1052,7 @@ async function handlePasswordReset() {
 
 function bindEvents() {
   const authForm = $("authForm");
-  const signupButton = $("signupButton");
+  const signupButton = $("toggle");
   const logoutButton = $("logout");
   const profileForm = $("profileForm");
   const classForm = $("classForm");
@@ -958,12 +1060,21 @@ function bindEvents() {
   const resourceForm = $("resourceForm");
   const quizForm = $("quizForm");
   const addQuestionButton = $("addQuestion");
-  const resetButton = $("forgotPassword");
+  const resetButton = $("reset");
   const refreshButton = $("refreshButton");
   const classFilter = $("classFilter");
+  const searchInput = $("search");
 
   if (authForm) {
-    authForm.addEventListener("submit", handleLogin);
+    authForm.addEventListener("submit", event => {
+      event.preventDefault();
+
+      if (state.signup) {
+        handleSignup(event);
+      } else {
+        handleLogin(event);
+      }
+    });
   }
 
   if (signupButton) {
@@ -971,13 +1082,33 @@ function bindEvents() {
       state.signup = !state.signup;
 
       const button = $("authButton");
+
       if (button) {
-        button.textContent = state.signup ? "Sign Up" : "Login";
+        button.textContent = state.signup
+          ? "Sign Up"
+          : "Login";
       }
 
       const title = $("authTitle");
+
       if (title) {
-        title.textContent = state.signup ? "Create Account" : "Login";
+        title.textContent = state.signup
+          ? "Create account"
+          : "Sign in to continue";
+      }
+
+      const nameLabel = $("nameLabel");
+
+      if (nameLabel) {
+        nameLabel.classList.toggle("hide", !state.signup);
+      }
+
+      const password = $("password");
+
+      if (password) {
+        password.autocomplete = state.signup
+          ? "new-password"
+          : "current-password";
       }
     });
   }
@@ -1022,8 +1153,13 @@ function bindEvents() {
     classFilter.addEventListener("change", renderBatches);
   }
 
+  if (searchInput) {
+    searchInput.addEventListener("input", renderBatches);
+  }
+
   document.addEventListener("click", event => {
     const target = event.target.closest("button");
+
     if (!target) return;
 
     if (target.dataset.enroll) {
@@ -1046,8 +1182,8 @@ function bindEvents() {
       deleteItem("quizzes", target.dataset.deleteQuiz);
     }
 
-    if (target.dataset.startQuiz) {
-      openQuiz(target.dataset.startQuiz);
+    if (target.dataset.openQuiz) {
+      openQuiz(target.dataset.openQuiz);
     }
   });
 }
@@ -1057,9 +1193,11 @@ onAuthStateChanged(auth, async user => {
 
   if (!user) {
     state.profile = null;
+
     $("auth")?.classList.remove("hide");
     $("app")?.classList.add("hide");
     $("logout")?.classList.add("hide");
+
     return;
   }
 
@@ -1073,6 +1211,15 @@ onAuthStateChanged(auth, async user => {
     $("logout")?.classList.remove("hide");
   } catch (error) {
     errorMessage(error);
+
+    $("auth")?.classList.remove("hide");
+    $("app")?.classList.add("hide");
+    $("logout")?.classList.add("hide");
+
+    toast(
+      "Login ho gaya, lekin data load nahi hua. " +
+      "Firebase Firestore Rules aur internet check karein."
+    );
   }
 });
 
