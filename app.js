@@ -587,9 +587,9 @@ async function removeDocument(collectionName, id) {
 }
 
 /* LOGIN AND SIGNUP */
-$("authForm")?.addEventListener("submit", async event => {
+$("authForm")?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  event.stopPropagation();
+  event.stopImmediatePropagation();
 
   const button = $("authButton");
   const email = $("email")?.value.trim().toLowerCase();
