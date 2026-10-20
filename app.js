@@ -1478,48 +1478,44 @@ async function takeQuiz(quizId) {
 
 
 // Firebase Login State and Initial Data Loading
-onAuthStateChanged(auth, async user => {
+onAuthStateChanged(auth, async (user) => {
   state.user = user;
 
   if (!user) {
-    state.profile = null;
-
     $("auth")?.classList.remove("hide");
     $("app")?.classList.add("hide");
-    $("logout")?.classList.add("hide");
-
     return;
   }
 
+  // Login ke baad turant dashboard dikhao
+  $("auth")?.classList.add("hide");
+  $("app")?.classList.remove("hide");
+
   try {
     const profileRef = doc(db, "users", user.uid);
-    const profileSnapshot = await getDoc(profileRef);
+    const profileSnap = await getDoc(profileRef);
 
-    if (profileSnapshot.exists()) {
-      state.profile = profileSnapshot.data();
+    if (profileSnap.exists()) {
+      state.profile = profileSnap.data();
     } else {
       state.profile = {
-        uid: user.uid,
-        email: user.email,
-        name: user.displayName || user.email.split("@")[0],
-        role: "student",
-        classId: ""
+        name: user.email?.split("@")[0] || "Student",
+        email: user.email || "",
+        role: "student"
       };
 
       await setDoc(profileRef, {
         ...state.profile,
+        uid: user.uid,
         createdAt: serverTimestamp()
       });
     }
 
     await loadData();
-  } catch (error) {
-    console.error("StudyHub initialization:", error);
 
-    toast(
-      "Login hua, lekin data load nahi hua: " +
-      errorMessage(error)
-    );
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    toast("Dashboard data error: " + (error.message || error));
   }
 });
 
