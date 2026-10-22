@@ -76,6 +76,9 @@ function errorMessage(error) {
   console.error("StudyHub error:", error);
 
   const messages = {
+    "permission-denied": "Firestore permission denied: Firebase Console mein firestore.rules publish karein aur admin email check karein.",
+    "firestore/permission-denied": "Firestore permission denied: Firebase Console mein firestore.rules publish karein aur admin email check karein.",
+    "unavailable": "Firebase abhi unavailable hai. Internet connection aur Firebase project check karein.",
     "auth/invalid-credential": "Email ya password galat hai.",
     "auth/user-not-found": "Account nahi mila.",
     "auth/wrong-password": "Password galat hai.",
@@ -88,9 +91,11 @@ function errorMessage(error) {
     "unavailable": "Firebase connection check karein."
   };
 
-  return messages[error?.code] ||
+  const message = messages[error?.code] ||
     error?.message ||
     "Kuch galat hua. Dobara try karein.";
+  toast(message);
+  return message;
 }
 
 function setBusy(button, busy, label) {
@@ -248,23 +253,69 @@ async function loadProfile(user) {
 }
 
 async function loadData() {
-  const results = await Promise.all([
-    readCollection("classes"),
-    readCollection("batches"),
-    readCollection("resources"),
-    readCollection("quizzes"),
-    readCollection("enrollments"),
-    readCollection("attempts")
-  ]);
+  console.log("StudyHub: Loading dashboard data...");
 
-  [
-    state.classes,
-    state.batches,
-    state.resources,
-    state.quizzes,
-    state.enrollments,
-    state.attempts
-  ] = results;
+  const collections = [
+    "classes",
+    "batches",
+    "resources",
+    "quizzes",
+    "enrollments",
+    "attempts"
+  ];
+
+  const results = await Promise.all(
+    collections.map(async (name) => {
+      try {
+        const data = await readCollection(name);
+
+        console.log(
+          `StudyHub: ${name} loaded successfully`,
+          data.length
+        );
+
+        return { name, data, error: null };
+      } catch (error) {
+        console.error(
+          `StudyHub: Failed to load ${name}`,
+          error.code,
+          error.message
+        );
+
+        return { name, data: [], error };
+      }
+    })
+  );
+
+  const failed = results.filter(item => item.error);
+
+  for (const item of results) {
+    switch (item.name) {
+      case "classes":
+        state.classes = item.data;
+        break;
+
+      case "batches":
+        state.batches = item.data;
+        break;
+
+      case "resources":
+        state.resources = item.data;
+        break;
+
+      case "quizzes":
+        state.quizzes = item.data;
+        break;
+
+      case "enrollments":
+        state.enrollments = item.data;
+        break;
+
+      case "attempts":
+        state.attempts = item.data;
+        break;
+    }
+  }
 
   fillOptions();
   renderShell();
@@ -273,6 +324,19 @@ async function loadData() {
   renderProgress();
   renderProfile();
   renderAdmin();
+
+  if (failed.length > 0) {
+    console.error(
+      "StudyHub collections failed:",
+      failed.map(item => ({
+        collection: item.name,
+        code: item.error.code,
+        message: item.error.message
+      }))
+    );
+  }
+
+  console.log("StudyHub: Dashboard rendering finished.");
 }
 
 function renderShell() {
@@ -286,25 +350,46 @@ function renderShell() {
     state.user?.email?.split("@")[0] ||
     "Student";
 
-  if ($("welcomeName")) {
-    $("welcomeName").textContent = name;
+  if ($("welcomeName")) $("welcomeName").textContent = name;
+  if ($("userName")) $("userName").textContent = name;
+
+  const greeting = $("greeting");
+  if (greeting) greeting.textContent = `Welcome, ${name}`;
+
+  const roleBadge = $("role");
+  if (roleBadge) roleBadge.textContent = isAdmin() ? "Admin" : "Student";
+
+  const roleText = $("roleText");
+  if (roleText) {
+    roleText.textContent = isAdmin()
+      ? "Manage classes, batches, teachers, learning resources and quizzes."
+      : "Your learning dashboard";
   }
 
-  if ($("userName")) {
-    $("userName").textContent = name;
-  }
+  $("adminNav")?.classList.toggle("hide", !isAdmin());
+  $("adminQuickAccess")?.classList.toggle("hide", !isAdmin());
 
-  document.querySelectorAll("[data-admin-only]")
-    .forEach(el => {
-      el.classList.toggle("hide", !isAdmin());
-    });
-}function showView(viewName) {
+  document.querySelectorAll("[data-admin-only]").forEach(el => {
+    el.classList.toggle("hide", !isAdmin());
+  });
+}
+
+const viewHistory = ["home"];
+function showView(viewName, remember = true) {
+  if (!$(viewName) || !$(viewName).classList.contains("view")) return;
+  const current = document.querySelector(".view:not(.hide)")?.id;
+  if (remember && current && current !== viewName) {
+    viewHistory.push(current);
+    if (viewHistory.length > 30) viewHistory.shift();
+    try { history.pushState({ studyHubView: viewName }, "", "#" + viewName); } catch (_) {}
+  }
   document.querySelectorAll(".view").forEach(view => {
     view.classList.add("hide");
   });
 
   const target = $(viewName);
   if (target) target.classList.remove("hide");
+  try { history.replaceState({ studyHubView: viewName }, "", "#" + viewName); } catch (_) {}
 
   document.querySelectorAll("[data-view]").forEach(button => {
     button.classList.toggle(
@@ -956,7 +1041,9 @@ function renderQuizzes() {
       </article>
     `).join("")
     : "<p>No quizzes available yet.</p>";
-}async function handleLogin(event) {
+}
+
+async function handleLogin(event) {
   event.preventDefault();
 
   const email = $("email")?.value.trim() || "";
@@ -1068,6 +1155,7 @@ function bindEvents() {
   if (authForm) {
     authForm.addEventListener("submit", event => {
       event.preventDefault();
+      event.stopPropagation();
 
       if (state.signup) {
         handleSignup(event);
@@ -1157,6 +1245,53 @@ function bindEvents() {
     searchInput.addEventListener("input", renderBatches);
   }
 
+  // Main navigation: Home, Batches, Progress, Profile, Manage
+  document.querySelectorAll("[data-view]").forEach(button => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.view;
+
+      if (view === "admin" && !isAdmin()) {
+        toast("Only admin can access this section.");
+        return;
+      }
+
+      showView(view);
+
+      if (view === "admin") {
+        document.querySelectorAll(".adminview").forEach(section => {
+          section.classList.add("hide");
+        });
+        $("structure")?.classList.remove("hide");
+      }
+    });
+  });
+
+  // Admin tabs: Classes & batches, Resources, Quiz builder, Reports
+  document.querySelectorAll("[data-admin]").forEach(button => {
+    button.addEventListener("click", () => {
+      if (!isAdmin()) {
+        toast("Only admin can access this section.");
+        return;
+      }
+
+      document.querySelectorAll(".adminview").forEach(section => {
+        section.classList.add("hide");
+      });
+
+      $(button.dataset.admin)?.classList.remove("hide");
+    });
+  });
+
+  $("backButton")?.addEventListener("click", () => {
+    if (history.state && history.length > 1) history.back();
+    else showView("home", false);
+  });
+  window.addEventListener("popstate", () => {
+    const view = location.hash.slice(1);
+    if (view && $(view)?.classList.contains("view")) showView(view, false);
+    else showView("home", false);
+  });
+
   document.addEventListener("click", event => {
     const target = event.target.closest("button");
 
@@ -1189,6 +1324,8 @@ function bindEvents() {
 }
 
 onAuthStateChanged(auth, async user => {
+  console.log("StudyHub: Auth state changed", user?.email || "No user");
+
   state.user = user;
 
   if (!user) {
@@ -1201,26 +1338,49 @@ onAuthStateChanged(auth, async user => {
     return;
   }
 
+  // Login successful: dashboard ko visible rakho.
+  $("auth")?.classList.add("hide");
+  $("app")?.classList.remove("hide");
+  $("logout")?.classList.remove("hide");
+
   try {
+    console.log("StudyHub: Loading profile...");
     await loadProfile(user);
-    await loadData();
-    renderShell();
+    console.log("StudyHub: Profile loaded");
 
-    $("auth")?.classList.add("hide");
-    $("app")?.classList.remove("hide");
-    $("logout")?.classList.remove("hide");
   } catch (error) {
-    errorMessage(error);
+    console.error("Profile loading failed:", error.code, error.message);
 
-    $("auth")?.classList.remove("hide");
-    $("app")?.classList.add("hide");
-    $("logout")?.classList.add("hide");
-
-    toast(
-      "Login ho gaya, lekin data load nahi hua. " +
-      "Firebase Firestore Rules aur internet check karein."
-    );
+    // Profile error ke karan dashboard hide nahi hoga.
+    state.profile = {
+      uid: user.uid,
+      email: user.email,
+      role: user.email?.toLowerCase() ===
+        "sumitpandey9891@gmail.com" ? "admin" : "student"
+    };
   }
+
+  try {
+    console.log("StudyHub: Loading dashboard data...");
+    await loadData();
+    console.log("StudyHub: Dashboard data loaded");
+
+  } catch (error) {
+    console.error("Dashboard data failed:", error.code, error.message);
+    toast("Dashboard khul gaya, lekin kuch data load nahi hua.");
+  }
+
+  try {
+    renderShell();
+  } catch (error) {
+    console.error("Dashboard rendering failed:", error);
+  }
+
+  $("auth")?.classList.add("hide");
+  $("app")?.classList.remove("hide");
+  $("logout")?.classList.remove("hide");
+
+  console.log("StudyHub: Login flow finished");
 });
 
 bindEvents();

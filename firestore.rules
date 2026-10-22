@@ -1,58 +1,76 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
     function isAdmin() {
       return signedIn()
-        && request.auth.token.email == "sumitpandey9891@gmail.com"
-        && request.auth.token.email_verified == true;
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() == 'sumitpandey9891@gmail.com';
     }
+
     match /users/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+
       allow create: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.role in ['student','admin'];
-      allow update: if isAdmin() || (signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.role == resource.data.role);
+        && (
+          request.resource.data.role == 'student'
+          || (isAdmin() && request.resource.data.role == 'admin')
+        );
+
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.role == resource.data.role
+        );
+
       allow delete: if isAdmin();
     }
+
     match /classes/{id} {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();
     }
+
     match /batches/{id} {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();
     }
+
     match /resources/{id} {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();
     }
+
     match /quizzes/{id} {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();
     }
+
     match /enrollments/{id} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.studentId == request.auth.uid);
+
       allow create: if signedIn()
-        && request.resource.data.studentId == request.auth.uid
-        && request.resource.data.batchId is string
-        && request.resource.data.classId is string;
-      allow read: if isAdmin() || (signedIn() && resource.data.studentId == request.auth.uid);
-      allow update: if isAdmin();
-      allow delete: if isAdmin() || (signedIn() && resource.data.studentId == request.auth.uid);
-    }
-    match /attempts/{id} {
-      allow create: if signedIn()
-        && request.resource.data.studentId == request.auth.uid
-        && request.resource.data.batchId is string;
-      allow read: if isAdmin() || (signedIn() && resource.data.studentId == request.auth.uid);
+        && request.resource.data.studentId == request.auth.uid;
+
       allow update, delete: if isAdmin();
     }
-    match /{document=**} { allow read, write: if false; }
+
+    match /attempts/{id} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.studentId == request.auth.uid);
+
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid;
+
+      allow update, delete: if isAdmin();
+    }
   }
 }
